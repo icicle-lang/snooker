@@ -4,6 +4,5 @@
   sha1 = "b89ee2ce5fc08b8f1ec5d92c6199b5fda9484783"
 
 [build.dist]
-  HADDOCK="true"
 
 [build.branches]
