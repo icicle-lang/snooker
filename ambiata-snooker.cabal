@@ -33,7 +33,8 @@ library
   exposed-modules:
                        Paths_ambiata_snooker
                        Snooker
-                       Snooker.Header
+                       Snooker.Codec
+                       Snooker.Data
                        Snooker.VInt
 
 test-suite test

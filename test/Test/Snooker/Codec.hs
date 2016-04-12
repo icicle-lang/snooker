@@ -2,13 +2,13 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
-module Test.Snooker.Header where
+module Test.Snooker.Codec where
 
-import           Snooker.Header
+import           Snooker.Codec
 
 import           P
 
-import           Test.Snooker.Arbitrary ()
+import           Test.Snooker.Arbitrary (ArbitraryMD5(..))
 import           Test.Snooker.Util
 
 import           Test.QuickCheck (forAllProperties, quickCheckWithResult)
@@ -17,7 +17,10 @@ import           Test.QuickCheck.Instances ()
 
 
 prop_header_tripping =
-  binaryTripping bSeqHeader getSeqHeader
+  binaryTripping bHeader getHeader
+
+prop_compressed_block_tripping (ArbitraryMD5 md5) =
+  binaryTripping (bCompressedBlock md5) (getCompressedBlock md5)
 
 return []
 tests =

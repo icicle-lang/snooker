@@ -1,7 +1,9 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
-module Test.Snooker.Arbitrary () where
+module Test.Snooker.Arbitrary (
+    ArbitraryMD5(..)
+  ) where
 
 import           Crypto.Hash (Digest, MD5, digestFromByteString)
 
@@ -10,13 +12,19 @@ import qualified Data.ByteString as B
 import           Disorder.Core.Gen (genFromMaybe)
 import           Disorder.Corpus
 
-import           Snooker.Header
+import           Snooker.Data
 
 import           P
 
-import           Test.QuickCheck (Arbitrary(..), Gen, vectorOf, listOf, shrinkList)
+import           Test.QuickCheck (Arbitrary(..), Gen)
+import           Test.QuickCheck (vectorOf, listOf, shrinkList, genericShrink)
 import           Test.QuickCheck.Instances ()
 
+
+newtype ArbitraryMD5 =
+  ArbitraryMD5 {
+      unArbitraryMD5 :: Digest MD5
+    } deriving (Eq, Ord, Show)
 
 genMD5 :: Gen (Digest MD5)
 genMD5 =
@@ -58,23 +66,48 @@ shrinkMetadata =
   in
     shrinkList go
 
-genSeqHeader :: Gen SeqHeader
-genSeqHeader =
-  SeqHeader
+genHeader :: Gen Header
+genHeader =
+  Header
     <$> genClassName
     <*> genClassName
     <*> genMetadata
     <*> genMD5
 
-shrinkSeqHeader :: SeqHeader -> [SeqHeader]
-shrinkSeqHeader (SeqHeader k0 v0 m0 s0) =
-  [ SeqHeader k v0 m0 s0 | k <- shrinkClassName k0 ] <>
-  [ SeqHeader k0 v m0 s0 | v <- shrinkClassName v0 ] <>
-  [ SeqHeader k0 v0 m s0 | m <- shrinkMetadata m0 ] <>
-  [ SeqHeader k0 v0 m0 s | s <- shrinkMD5 s0 ]
+shrinkHeader :: Header -> [Header]
+shrinkHeader (Header k0 v0 m0 s0) =
+  [ Header k v0 m0 s0 | k <- shrinkClassName k0 ] <>
+  [ Header k0 v m0 s0 | v <- shrinkClassName v0 ] <>
+  [ Header k0 v0 m s0 | m <- shrinkMetadata m0 ] <>
+  [ Header k0 v0 m0 s | s <- shrinkMD5 s0 ]
 
-instance Arbitrary SeqHeader where
+genCompressedBlock :: Gen CompressedBlock
+genCompressedBlock =
+  CompressedBlock
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+shrinkCompressedBlock :: CompressedBlock -> [CompressedBlock]
+shrinkCompressedBlock =
+  genericShrink
+
+instance Arbitrary ArbitraryMD5 where
   arbitrary =
-    genSeqHeader
+    ArbitraryMD5 <$> genMD5
   shrink =
-    shrinkSeqHeader
+    fmap ArbitraryMD5 . shrinkMD5 . unArbitraryMD5
+
+instance Arbitrary Header where
+  arbitrary =
+    genHeader
+  shrink =
+    shrinkHeader
+
+instance Arbitrary CompressedBlock where
+  arbitrary =
+    genCompressedBlock
+  shrink =
+    shrinkCompressedBlock

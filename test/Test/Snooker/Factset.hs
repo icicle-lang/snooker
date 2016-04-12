@@ -12,7 +12,8 @@ import qualified Data.ByteString.Lazy as L
 
 import           Disorder.Core.IO
 
-import           Snooker.Header
+import           Snooker.Codec
+import           Snooker.Data
 
 import           P
 
@@ -36,15 +37,15 @@ bytesWritable =
 prop_sample_file =
   once . testIO $ do
     lbs <- L.readFile "data/mackerel-2014-01-01"
-    case runGetOrFail getSeqHeader lbs of
+    case runGetOrFail getHeader lbs of
       Left (_, _, msg) ->
         fail msg
       Right (_, _, hdr) ->
         return . conjoin $ [
-            seqKeyType hdr === nullWritable
-          , seqValueType hdr === bytesWritable
-          , seqMetadata hdr === []
-          , Just (seqSync hdr) === fileSync
+            headerKeyType hdr === nullWritable
+          , headerValueType hdr === bytesWritable
+          , headerMetadata hdr === []
+          , Just (headerSync hdr) === fileSync
           ]
 
 return []
