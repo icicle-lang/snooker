@@ -37,13 +37,21 @@ data BinaryError =
     deriving (Eq, Ord, Show)
 
 data SnookerError =
-    HeaderError !BinaryError
-  | BlockError !BinaryError
+    CorruptHeader !BinaryError
+  | CorruptRecordBlock !BinaryError
     deriving (Eq, Ord, Show)
 
+renderBinaryError :: BinaryError -> Text
+renderBinaryError = \case
+  BinaryError msg ->
+    msg
+
 renderSnookerError :: SnookerError -> Text
-renderSnookerError =
-  T.pack . show
+renderSnookerError = \case
+  CorruptHeader err ->
+    "Sequence file header was corrupt: " <> renderBinaryError err
+  CorruptRecordBlock err ->
+    "Sequence file record block was corrupt: " <> renderBinaryError err
 
 sinkGet :: Monad m => Get a -> Sink ByteString m (Either BinaryError a)
 sinkGet g =
@@ -87,7 +95,7 @@ conduitGet g =
 
 sinkHeader :: Monad m => Sink ByteString m (Either SnookerError Header)
 sinkHeader =
-  fmap (first HeaderError) $
+  fmap (first CorruptHeader) $
     sinkGet getHeader
 
 conduitCompressedBlock ::
@@ -96,7 +104,7 @@ conduitCompressedBlock ::
   Digest MD5 ->
   Conduit ByteString (EitherT SnookerError m) CompressedBlock
 conduitCompressedBlock marker =
-  hoist (firstT BlockError) . conduitGet $
+  hoist (firstT CorruptRecordBlock) . conduitGet $
     getCompressedBlock marker
 
 decodeCompressedBlocks ::
