@@ -1,9 +1,13 @@
-{-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Snooker.Header where
+module Snooker.Codec (
+    getHeader
+  , getCompressedBlock
+
+  , bHeader
+  , bCompressedBlock
+  ) where
 
 import           Crypto.Hash (Digest, MD5, digestFromByteString)
 
@@ -19,34 +23,13 @@ import qualified Data.ByteString.Char8 as Char8
 import qualified Data.Text.Encoding as T
 import           Data.Word (Word8)
 
-import           GHC.Generics (Generic)
-
 import           P
 
 import           Snooker.VInt
+import           Snooker.Data
 
-import           X.Text.Show (gshowsPrec)
+import           Text.Printf (printf)
 
-------------------------------------------------------------------------
-
-newtype ClassName =
-  ClassName {
-      unClassName :: Text
-    } deriving (Eq, Ord, Generic)
-
-instance Show ClassName where
-  showsPrec =
-    gshowsPrec
-
-data SeqHeader =
-  SeqHeader {
-      seqKeyType :: !ClassName
-    , seqValueType :: !ClassName
-    , seqMetadata :: ![(Text, Text)]
-    , seqSync :: !(Digest MD5)
-    } deriving (Eq, Ord, Show, Generic)
-
-------------------------------------------------------------------------
 
 getVIntPrefixedBytes :: Get ByteString
 getVIntPrefixedBytes =
@@ -122,16 +105,16 @@ bMetadata xs =
     Builder.word32LE (fromIntegral $ length xs) <>
     mconcat (fmap kv xs)
 
-seqVersion :: Word8
-seqVersion =
+headerVersion :: Word8
+headerVersion =
   6
 
 snappyCodec :: ClassName
 snappyCodec =
   ClassName "org.apache.hadoop.io.compress.SnappyCodec"
 
-getSeqHeader :: Get SeqHeader
-getSeqHeader = do
+getHeader :: Get Header
+getHeader = do
   magic <- Binary.getByteString 3
 
   when (magic /= "SEQ") $
@@ -139,7 +122,7 @@ getSeqHeader = do
 
   version <- Binary.getWord8
 
-  when (version /= seqVersion) $
+  when (version /= headerVersion) $
     fail $ "unknown version: " <> show version
 
   keyType <- getClassName
@@ -159,20 +142,49 @@ getSeqHeader = do
   metadata <- getMetadata
   sync <- getMD5
 
-  return $ SeqHeader keyType valueType metadata sync
+  return $ Header keyType valueType metadata sync
 
-bSeqHeader :: SeqHeader -> Builder
-bSeqHeader h =
+bHeader :: Header -> Builder
+bHeader h =
   let
     compression = True
     blockCompression = True
   in
     Builder.byteString "SEQ" <>
-    Builder.word8 seqVersion <>
-    bClassName (seqKeyType h) <>
-    bClassName (seqValueType h) <>
+    Builder.word8 headerVersion <>
+    bClassName (headerKeyType h) <>
+    bClassName (headerValueType h) <>
     bBool compression <>
     bBool blockCompression <>
     bClassName snappyCodec <>
-    bMetadata (seqMetadata h) <>
-    bMD5 (seqSync h)
+    bMetadata (headerMetadata h) <>
+    bMD5 (headerSync h)
+
+getCompressedBlock :: Digest MD5 -> Get CompressedBlock
+getCompressedBlock expectedMarker = do
+  escape <- Binary.getWord32le
+  when (escape /= 0xffffffff) . fail $
+    "file corrupt, expected to find sync escape " <>
+    "<0xffffffff> but was " <> printf "<0x%08x>" escape
+
+  marker <- getMD5
+  when (expectedMarker /= marker) . fail $
+    "file corrupt, expected to find sync marker " <>
+    "<" <> show expectedMarker <> "> but was <" <> show marker <> ">"
+
+  CompressedBlock
+    <$> getVInt
+    <*> getVIntPrefixedBytes
+    <*> getVIntPrefixedBytes
+    <*> getVIntPrefixedBytes
+    <*> getVIntPrefixedBytes
+
+bCompressedBlock :: Digest MD5 -> CompressedBlock -> Builder
+bCompressedBlock marker b =
+  Builder.word32LE 0xffffffff <>
+  bMD5 marker <>
+  bVInt (compressedCount b) <>
+  bVIntPrefixedBytes (compressedKeySizes b) <>
+  bVIntPrefixedBytes (compressedKeys b) <>
+  bVIntPrefixedBytes (compressedValueSizes b) <>
+  bVIntPrefixedBytes (compressedValues b)
