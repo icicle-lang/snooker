@@ -3,6 +3,7 @@
 module Snooker.Data (
     ClassName(..)
   , Header(..)
+  , EncodedBlock(..)
   , CompressedBlock(..)
   ) where
 
@@ -32,6 +33,15 @@ data Header =
     , headerValueType :: !ClassName
     , headerMetadata :: ![(Text, Text)]
     , headerSync :: !(Digest MD5)
+    } deriving (Eq, Ord, Show, Generic)
+
+data EncodedBlock =
+  EncodedBlock {
+      encodedCount :: !Int
+    , encodedKeySizes :: !ByteString
+    , encodedKeys :: !ByteString
+    , encodedValueSizes :: !ByteString
+    , encodedValues :: !ByteString
     } deriving (Eq, Ord, Show, Generic)
 
 data CompressedBlock =

@@ -14,6 +14,7 @@ library
   build-depends:
                        base                            >= 3          && < 5
                      , ambiata-p
+                     , ambiata-snapper
                      , ambiata-x-eithert
                      , ambiata-x-show
                      , base16-bytestring               == 0.1.*
@@ -99,6 +100,7 @@ test-suite test-io
                      , binary                          >= 0.7        && < 0.9
                      , bytestring                      == 0.10.*
                      , conduit                         == 1.2.*
+                     , conduit-combinators             == 1.0.*
                      , conduit-extra                   == 1.1.*
                      , cryptonite                      == 0.15.*
                      , QuickCheck                      >= 2.8.2      && < 2.9
