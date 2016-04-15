@@ -8,20 +8,25 @@ module Snooker.Conduit (
   , renderSnookerError
 
   , decodeCompressedBlocks
+  , encodeCompressedBlocks
   ) where
 
+import           Control.Monad.Base (MonadBase)
 import           Control.Monad.Morph (MFunctor(..))
+import           Control.Monad.Primitive (PrimMonad)
 import           Control.Monad.Trans.Class (lift)
 
 import           Crypto.Hash (Digest, MD5)
 
 import           Data.Binary.Get (Get, Decoder(..))
 import           Data.Binary.Get (runGetIncremental, pushChunk)
-import           Data.Conduit (Conduit, ResumableSource, Sink)
-import           Data.Conduit (($$++), ($=+))
-import           Data.Conduit (yield, await, leftover)
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
+import           Data.Conduit ((=$=), ($$++), ($=+))
+import           Data.Conduit (Conduit, ResumableSource, Sink)
+import           Data.Conduit (yield, await, leftover)
+import           Data.Conduit.ByteString.Builder (builderToByteString)
+import qualified Data.Conduit.List as Conduit
 import qualified Data.Text as T
 
 import           P
@@ -62,7 +67,8 @@ sinkGet g =
       Partial k ->
         feed . k =<< await
       Done bs _ v -> do
-        leftover bs
+        unless (B.null bs) $
+          leftover bs
         return $ Right v
   in
     feed $ runGetIncremental g
@@ -98,12 +104,12 @@ sinkHeader =
   fmap (first CorruptHeader) $
     sinkGet getHeader
 
-conduitCompressedBlock ::
+conduitDecodeCompressedBlock ::
   Functor m =>
   Monad m =>
   Digest MD5 ->
   Conduit ByteString (EitherT SnookerError m) CompressedBlock
-conduitCompressedBlock marker =
+conduitDecodeCompressedBlock marker =
   hoist (firstT CorruptRecordBlock) . conduitGet $
     getCompressedBlock marker
 
@@ -117,5 +123,18 @@ decodeCompressedBlocks src0 = do
   header <- hoistEither eheader
   let
     blocks =
-      hoist lift src1 $=+ conduitCompressedBlock (headerSync header)
+      hoist lift src1 $=+ conduitDecodeCompressedBlock (headerSync header)
   return (header, blocks)
+
+encodeCompressedBlocks ::
+  MonadBase base m =>
+  PrimMonad base =>
+  Header ->
+  Conduit CompressedBlock m ByteString
+encodeCompressedBlocks header =
+  let
+    builders = do
+      yield (bHeader header)
+      Conduit.map . bCompressedBlock $ headerSync header
+  in
+    builders =$= builderToByteString

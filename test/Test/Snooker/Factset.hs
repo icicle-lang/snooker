@@ -15,7 +15,6 @@ import qualified Data.ByteString.Lazy as L
 import           Data.Conduit (($$+-), newResumableSource)
 import           Data.Conduit.Binary (sourceFile)
 import qualified Data.Conduit.List as Conduit
-import qualified Data.Text as T
 
 import           Disorder.Core.IO
 
@@ -28,8 +27,9 @@ import           Snooker.Data
 import           System.IO (IO)
 
 import           Test.QuickCheck (Property, quickCheckAll, once, conjoin, (===))
-import           Test.QuickCheck.Property (counterexample, failed)
 import           Test.QuickCheck.Instances ()
+
+import           Test.Snooker.Util
 
 import           X.Control.Monad.Trans.Either (EitherT, runEitherT)
 
@@ -63,15 +63,7 @@ prop_read_header =
 
 testEitherResource :: EitherT SnookerError (ResourceT IO) Property -> Property
 testEitherResource =
-  let
-    ensureRight = \case
-      Left err ->
-        counterexample (T.unpack $ renderSnookerError err) $
-        failed
-      Right prop ->
-        prop
-  in
-    testIO . runResourceT . fmap ensureRight . runEitherT
+  testIO . runResourceT . fmap (squashRender renderSnookerError) . runEitherT
 
 prop_compressed_blocks =
   once . testEitherResource $ do
