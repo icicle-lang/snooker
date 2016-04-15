@@ -94,6 +94,19 @@ shrinkCompressedBlock :: CompressedBlock -> [CompressedBlock]
 shrinkCompressedBlock =
   genericShrink
 
+genEncodedBlock :: Gen EncodedBlock
+genEncodedBlock =
+  EncodedBlock
+    <$> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+    <*> arbitrary
+
+shrinkEncodedBlock :: EncodedBlock -> [EncodedBlock]
+shrinkEncodedBlock =
+  genericShrink
+
 instance Arbitrary ArbitraryMD5 where
   arbitrary =
     ArbitraryMD5 <$> genMD5
@@ -111,3 +124,9 @@ instance Arbitrary CompressedBlock where
     genCompressedBlock
   shrink =
     shrinkCompressedBlock
+
+instance Arbitrary EncodedBlock where
+  arbitrary =
+    genEncodedBlock
+  shrink =
+    shrinkEncodedBlock

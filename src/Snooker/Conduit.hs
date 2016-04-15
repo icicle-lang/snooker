@@ -9,6 +9,9 @@ module Snooker.Conduit (
 
   , decodeCompressedBlocks
   , encodeCompressedBlocks
+
+  , decodeEncodedBlocks
+  , encodeEncodedBlocks
   ) where
 
 import           Control.Monad.Base (MonadBase)
@@ -44,6 +47,7 @@ data BinaryError =
 data SnookerError =
     CorruptHeader !BinaryError
   | CorruptRecordBlock !BinaryError
+  | CorruptCompression !DecompressError
     deriving (Eq, Ord, Show)
 
 renderBinaryError :: BinaryError -> Text
@@ -57,6 +61,8 @@ renderSnookerError = \case
     "Sequence file header was corrupt: " <> renderBinaryError err
   CorruptRecordBlock err ->
     "Sequence file record block was corrupt: " <> renderBinaryError err
+  CorruptCompression err ->
+    "Sequence file record block compression was corrupt: " <> renderDecompressError err
 
 sinkGet :: Monad m => Get a -> Sink ByteString m (Either BinaryError a)
 sinkGet g =
@@ -113,6 +119,10 @@ conduitDecodeCompressedBlock marker =
   hoist (firstT CorruptRecordBlock) . conduitGet $
     getCompressedBlock marker
 
+conduitDecompressBlock :: Monad m => Conduit CompressedBlock (EitherT SnookerError m) EncodedBlock
+conduitDecompressBlock =
+  Conduit.mapM (hoistEither . first CorruptCompression . decompressBlock)
+
 decodeCompressedBlocks ::
   Functor m =>
   Monad m =>
@@ -138,3 +148,19 @@ encodeCompressedBlocks header =
       Conduit.map . bCompressedBlock $ headerSync header
   in
     builders =$= builderToByteString
+
+decodeEncodedBlocks ::
+  Functor m =>
+  Monad m =>
+  ResumableSource m ByteString ->
+  EitherT SnookerError m (Header, ResumableSource (EitherT SnookerError m) EncodedBlock)
+decodeEncodedBlocks =
+  secondT (second ($=+ conduitDecompressBlock)) . decodeCompressedBlocks
+
+encodeEncodedBlocks ::
+  MonadBase base m =>
+  PrimMonad base =>
+  Header ->
+  Conduit EncodedBlock m ByteString
+encodeEncodedBlocks header =
+  Conduit.map compressBlock =$= encodeCompressedBlocks header

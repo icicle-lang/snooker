@@ -10,11 +10,12 @@ import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import           Crypto.Hash (Digest, MD5, digestFromByteString)
 
 import           Data.Binary.Get (runGetOrFail)
+import qualified Data.ByteString as B
 import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as L
-import           Data.Conduit (($$+-), newResumableSource)
+import           Data.Conduit (($$+-), (=$=), newResumableSource)
 import           Data.Conduit.Binary (sourceFile)
-import qualified Data.Conduit.List as Conduit
+import qualified Data.Conduit.Combinators as Conduit
 
 import           Disorder.Core.IO
 
@@ -26,7 +27,8 @@ import           Snooker.Data
 
 import           System.IO (IO)
 
-import           Test.QuickCheck (Property, quickCheckAll, once, conjoin, (===))
+import           Test.QuickCheck (Property, quickCheckAll, once, conjoin)
+import           Test.QuickCheck ((.&&.), (===))
 import           Test.QuickCheck.Instances ()
 
 import           Test.Snooker.Util
@@ -65,14 +67,34 @@ testEitherResource :: EitherT SnookerError (ResourceT IO) Property -> Property
 testEitherResource =
   testIO . runResourceT . fmap (squashRender renderSnookerError) . runEitherT
 
-prop_compressed_blocks =
+prop_blocks =
   once . testEitherResource $ do
+
     let
-      file = newResumableSource $ sourceFile "data/expression-2014-06-02"
-    (_, blocks) <- decodeCompressedBlocks file
-    records <- blocks $$+- Conduit.fold (\n cb -> compressedCount cb + n) 0
+      path =
+        "data/expression-2014-06-02"
+
+      sumFile f = do
+        (_, blocks) <-
+          decodeEncodedBlocks . newResumableSource $ sourceFile path
+        blocks $$+- Conduit.map f =$= Conduit.sum
+
+      sumBytes f =
+        sumFile (B.length . f)
+
+    records <- sumFile encodedCount
+    keySizeBytes <- sumBytes encodedKeySizes
+    keyBytes <- sumBytes encodedKeys
+    valueSizeBytes <- sumBytes encodedValueSizes
+    valueBytes <- sumBytes encodedValues
+
     return $
-      records === 20
+      records === 20 .&&.
+      keySizeBytes === 20 .&&.
+      keyBytes === 0 .&&.
+      valueSizeBytes === 20 .&&.
+      valueBytes === 737
+
 
 return []
 tests =

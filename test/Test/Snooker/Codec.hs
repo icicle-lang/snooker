@@ -4,6 +4,8 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Test.Snooker.Codec where
 
+import           Disorder.Core.Tripping (tripping)
+
 import           Snooker.Codec
 
 import           P
@@ -21,6 +23,9 @@ prop_header_tripping =
 
 prop_compressed_block_tripping (ArbitraryMD5 md5) =
   binaryTripping (bCompressedBlock md5) (getCompressedBlock md5)
+
+prop_compress_tripping =
+  tripping compressBlock decompressBlock
 
 return []
 tests =

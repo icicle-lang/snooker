@@ -4,9 +4,14 @@
 module Snooker.Codec (
     getHeader
   , getCompressedBlock
+  , decompressBlock
 
   , bHeader
   , bCompressedBlock
+  , compressBlock
+
+  , DecompressError(..)
+  , renderDecompressError
   ) where
 
 import           Crypto.Hash (Digest, MD5, digestFromByteString)
@@ -14,22 +19,41 @@ import           Crypto.Hash (Digest, MD5, digestFromByteString)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Binary
 import           Data.ByteArray (convert)
-import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
+import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16 as Base16
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString.Builder.Extra as Builder
 import qualified Data.ByteString.Char8 as Char8
+import           Data.ByteString.Internal (ByteString(..))
+import qualified Data.ByteString.Lazy as L
+import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Word (Word8)
 
 import           P
+
+import qualified Snapper
 
 import           Snooker.VInt
 import           Snooker.Data
 
 import           Text.Printf (printf)
 
+
+data DecompressError =
+    DecompressBinaryError !Text
+  | DecompressDidNotConsumeAll !Int64
+    deriving (Eq, Ord, Show)
+
+renderDecompressError :: DecompressError -> Text
+renderDecompressError = \case
+  DecompressBinaryError msg ->
+    msg
+  DecompressDidNotConsumeAll remaining ->
+    "did not consume all compressed bytes, remaining bytes: " <> T.pack (show remaining)
 
 getVIntPrefixedBytes :: Get ByteString
 getVIntPrefixedBytes =
@@ -188,3 +212,85 @@ bCompressedBlock marker b =
   bVIntPrefixedBytes (compressedKeys b) <>
   bVIntPrefixedBytes (compressedValueSizes b) <>
   bVIntPrefixedBytes (compressedValues b)
+
+decompressLazy :: Lazy.ByteString -> Either DecompressError Lazy.ByteString
+decompressLazy lbs =
+  let
+    getChunk = do
+      compressedSize <- Binary.getWord32be
+      compressedBytes <- Binary.getByteString $ fromIntegral compressedSize
+      case Snapper.decompress compressedBytes of
+        Nothing ->
+          fail "could not decompress chunk"
+        Just bs ->
+          pure bs
+
+    getChunks remaining =
+      if remaining == 0 then
+        return []
+      else do
+        bs <- getChunk
+        bss <- getChunks (remaining - B.length bs)
+        return $ bs : bss
+
+    get = do
+      decompressedSize <- Binary.getWord32be
+      getChunks $ fromIntegral decompressedSize
+  in
+    case Binary.runGetOrFail get lbs of
+      Left (_, _, msg) ->
+        Left . DecompressBinaryError $ T.pack msg
+      Right ("", _, bss) ->
+        Right $ L.fromChunks bss
+      Right (bs, _, _) ->
+        Left . DecompressDidNotConsumeAll $ L.length bs
+
+decompressStrict :: Strict.ByteString -> Either DecompressError Strict.ByteString
+decompressStrict =
+  fmap L.toStrict . decompressLazy . L.fromStrict
+
+compressStrict :: Strict.ByteString -> Strict.ByteString
+compressStrict uncompressed =
+  let
+    compressed =
+      Snapper.compress uncompressed
+
+    uncompressedSize =
+      B.length uncompressed
+
+    compressedSize =
+      B.length compressed
+
+    builderSize =
+      4 + 4 + compressedSize
+
+    fromBuilder =
+      L.toStrict .
+      Builder.toLazyByteStringWith (Builder.untrimmedStrategy builderSize 0) L.empty
+  in
+    case uncompressedSize of
+      0 ->
+        B.pack [0x0, 0x0, 0x0, 0x0]
+      _ ->
+        fromBuilder $
+          Builder.word32BE (fromIntegral uncompressedSize) <>
+          Builder.word32BE (fromIntegral compressedSize) <>
+          Builder.byteString compressed
+
+decompressBlock :: CompressedBlock -> Either DecompressError EncodedBlock
+decompressBlock b =
+  EncodedBlock
+    <$> pure (compressedCount b)
+    <*> (decompressStrict $ compressedKeySizes b)
+    <*> (decompressStrict $ compressedKeys b)
+    <*> (decompressStrict $ compressedValueSizes b)
+    <*> (decompressStrict $ compressedValues b)
+
+compressBlock :: EncodedBlock -> CompressedBlock
+compressBlock b =
+  CompressedBlock
+    (encodedCount b)
+    (compressStrict $ encodedKeySizes b)
+    (compressStrict $ encodedKeys b)
+    (compressStrict $ encodedValueSizes b)
+    (compressStrict $ encodedValues b)
