@@ -24,9 +24,11 @@ library
                      , cryptonite                      == 0.15.*
                      , memory                          >= 0.11       && < 0.13
                      , mmorph                          == 1.0.*
+                     , primitive                       == 0.6.*
                      , resourcet                       == 1.1.*
                      , text                            == 1.2.*
                      , transformers                    >= 0.4        && < 0.6
+                     , transformers-base               == 0.4.*
 
   ghc-options:
                        -Wall
@@ -61,11 +63,16 @@ test-suite test
                      , ambiata-disorder-corpus
                      , ambiata-p
                      , ambiata-snooker
-                     , cryptonite                      == 0.15.*
+                     , ambiata-x-eithert
                      , binary                          >= 0.7        && < 0.9
                      , bytestring                      == 0.10.*
+                     , conduit                         == 1.2.*
+                     , cryptonite                      == 0.15.*
+                     , mmorph                          == 1.0.*
                      , QuickCheck                      >= 2.8.2      && < 2.9
                      , quickcheck-instances            == 0.3.*
+                     , text                            == 1.2.*
+                     , transformers                    >= 0.4        && < 0.6
 
 
 test-suite test-io
