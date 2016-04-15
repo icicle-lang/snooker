@@ -1,6 +1,6 @@
-{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Test.Snooker.Factset where
@@ -16,6 +16,9 @@ import qualified Data.ByteString.Lazy as L
 import           Data.Conduit (($$+-), (=$=), newResumableSource)
 import           Data.Conduit.Binary (sourceFile)
 import qualified Data.Conduit.Combinators as Conduit
+import qualified Data.Conduit.List as Conduit (consume)
+import qualified Data.Text as T
+import qualified Data.Vector as Boxed
 
 import           Disorder.Core.IO
 
@@ -24,6 +27,7 @@ import           P
 import           Snooker.Codec
 import           Snooker.Conduit
 import           Snooker.Data
+import           Snooker.Writable
 
 import           System.IO (IO)
 
@@ -41,14 +45,6 @@ fileSync =
   digestFromByteString . fst $
     Base16.decode "b48b79e329914cd3d0ff793a86801dc7"
 
-nullWritable :: ClassName
-nullWritable =
-  ClassName "org.apache.hadoop.io.NullWritable"
-
-bytesWritable :: ClassName
-bytesWritable =
-  ClassName "org.apache.hadoop.io.BytesWritable"
-
 prop_read_header =
   once . testIO $ do
     lbs <- L.readFile "data/mackerel-2014-01-01"
@@ -57,15 +53,19 @@ prop_read_header =
         fail msg
       Right (_, _, hdr) ->
         return . conjoin $ [
-            headerKeyType hdr === nullWritable
-          , headerValueType hdr === bytesWritable
-          , headerMetadata hdr === []
+            headerKeyType hdr === writableClass nullWritable
+          , headerValueType hdr === writableClass bytesWritable
+          , headerMetadata hdr === Metadata []
           , Just (headerSync hdr) === fileSync
           ]
 
-testEitherResource :: EitherT SnookerError (ResourceT IO) Property -> Property
+testEitherResource :: (Show ek, Show ev) => EitherT (SnookerError ek ev) (ResourceT IO) Property -> Property
 testEitherResource =
-  testIO . runResourceT . fmap (squashRender renderSnookerError) . runEitherT
+  let
+    renderError =
+      renderSnookerError (T.pack . show) (T.pack . show)
+  in
+    testIO . runResourceT . fmap (squashRender renderError) . runEitherT
 
 prop_blocks =
   once . testEitherResource $ do
@@ -74,27 +74,20 @@ prop_blocks =
       path =
         "data/expression-2014-06-02"
 
-      sumFile f = do
-        (_, blocks) <-
-          decodeEncodedBlocks . newResumableSource $ sourceFile path
-        blocks $$+- Conduit.map f =$= Conduit.sum
+      withFile f c = do
+        (Metadata [], blocks) <-
+          decodeBlocks nullWritable bytesWritable . newResumableSource $ sourceFile path
+        blocks $$+- Conduit.map f =$= c
 
-      sumBytes f =
-        sumFile (B.length . f)
-
-    records <- sumFile encodedCount
-    keySizeBytes <- sumBytes encodedKeySizes
-    keyBytes <- sumBytes encodedKeys
-    valueSizeBytes <- sumBytes encodedValueSizes
-    valueBytes <- sumBytes encodedValues
+    nrecords <- withFile blockCount Conduit.sum
+    (nkeys :: Int) <- withFile blockKeys Conduit.lengthE
+    values <- fmap Boxed.concat . withFile blockValues $ Conduit.consume
 
     return $
-      records === 20 .&&.
-      keySizeBytes === 20 .&&.
-      keyBytes === 0 .&&.
-      valueSizeBytes === 20 .&&.
-      valueBytes === 737
-
+      nrecords === 20 .&&.
+      nkeys === 20 .&&.
+      Boxed.length values === 20 .&&.
+      sum (fmap B.length values) === 657
 
 return []
 tests =

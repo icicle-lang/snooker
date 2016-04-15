@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -8,6 +9,7 @@ module Test.Snooker.Arbitrary (
 import           Crypto.Hash (Digest, MD5, digestFromByteString)
 
 import qualified Data.ByteString as B
+import qualified Data.Vector.Generic as Generic
 
 import           Disorder.Core.Gen (genFromMaybe)
 import           Disorder.Corpus
@@ -50,21 +52,21 @@ shrinkClassName :: ClassName -> [ClassName]
 shrinkClassName =
   fmap (ClassName . unWater) . shrink . (Water . unClassName)
 
-genMetadata :: Gen [(Text, Text)]
+genMetadata :: Gen Metadata
 genMetadata =
-  listOf $ do
+  fmap Metadata . listOf $ do
     k <- unMuppet <$> arbitrary
     v <- unBoat <$> arbitrary
     return (k, v)
 
-shrinkMetadata :: [(Text, Text)] -> [[(Text, Text)]]
+shrinkMetadata :: Metadata -> [Metadata]
 shrinkMetadata =
   let
     go (k0, v0) =
       [ (k, v0) | k <- fmap unMuppet . shrink $ Muppet k0 ] <>
       [ (k0, v) | v <- fmap unBoat . shrink $ Boat v0 ]
   in
-    shrinkList go
+    fmap Metadata . shrinkList go . unMetadata
 
 genHeader :: Gen Header
 genHeader =
@@ -107,11 +109,48 @@ shrinkEncodedBlock :: EncodedBlock -> [EncodedBlock]
 shrinkEncodedBlock =
   genericShrink
 
+genBlock ::
+  Generic.Vector vk k =>
+  Generic.Vector vv v =>
+  Arbitrary k =>
+  Arbitrary v =>
+  Gen (Block vk vv k v)
+genBlock = do
+  ks <- listOf arbitrary
+  vs <- vectorOf (length ks) arbitrary
+  pure $
+    Block (length ks) (Generic.fromList ks) (Generic.fromList vs)
+
+shrinkBlock ::
+  Generic.Vector vk k =>
+  Generic.Vector vv v =>
+  Arbitrary (vk k) =>
+  Arbitrary (vv v) =>
+  Arbitrary k =>
+  Arbitrary v =>
+  Block vk vv k v ->
+  [Block vk vv k v]
+shrinkBlock =
+  let
+    fixup (Block len ks vs) =
+      let
+        n = len `min` Generic.length ks `min` Generic.length vs
+      in
+        Block n (Generic.take n ks) (Generic.take n vs)
+  in
+    fmap fixup . genericShrink
+
 instance Arbitrary ArbitraryMD5 where
   arbitrary =
     ArbitraryMD5 <$> genMD5
   shrink =
     fmap ArbitraryMD5 . shrinkMD5 . unArbitraryMD5
+
+instance Arbitrary Metadata where
+  arbitrary =
+    genMetadata
+  shrink =
+    shrinkMetadata
 
 instance Arbitrary Header where
   arbitrary =
@@ -130,3 +169,16 @@ instance Arbitrary EncodedBlock where
     genEncodedBlock
   shrink =
     shrinkEncodedBlock
+
+instance
+  ( Generic.Vector vk k
+  , Generic.Vector vv v
+  , Arbitrary (vk k)
+  , Arbitrary (vv v)
+  , Arbitrary k
+  , Arbitrary v
+  ) => Arbitrary (Block vk vv k v) where
+  arbitrary =
+    genBlock
+  shrink =
+    shrinkBlock

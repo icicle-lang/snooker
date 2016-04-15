@@ -5,13 +5,15 @@ module Snooker.Codec (
     getHeader
   , getCompressedBlock
   , decompressBlock
+  , decodeBlock
 
   , bHeader
   , bCompressedBlock
   , compressBlock
+  , encodeBlock
 
-  , DecompressError(..)
-  , renderDecompressError
+  , DecodeError(..)
+  , renderDecodeError
   ) where
 
 import           Crypto.Hash (Digest, MD5, digestFromByteString)
@@ -19,6 +21,7 @@ import           Crypto.Hash (Digest, MD5, digestFromByteString)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Binary
 import           Data.ByteArray (convert)
+import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString as B
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16 as Base16
@@ -26,10 +29,8 @@ import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Builder.Extra as Builder
 import qualified Data.ByteString.Char8 as Char8
-import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy as Lazy
-import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
 import           Data.Word (Word8)
 
@@ -37,23 +38,25 @@ import           P
 
 import qualified Snapper
 
-import           Snooker.VInt
+import           Snooker.Binary
 import           Snooker.Data
+import           Snooker.VInt
+import           Snooker.Writable
 
 import           Text.Printf (printf)
 
 
-data DecompressError =
-    DecompressBinaryError !Text
-  | DecompressDidNotConsumeAll !Int64
+data DecodeError ek ev =
+    KeyDecodeError !ek
+  | ValueDecodeError !ev
     deriving (Eq, Ord, Show)
 
-renderDecompressError :: DecompressError -> Text
-renderDecompressError = \case
-  DecompressBinaryError msg ->
-    msg
-  DecompressDidNotConsumeAll remaining ->
-    "did not consume all compressed bytes, remaining bytes: " <> T.pack (show remaining)
+renderDecodeError :: (ek -> Text) -> (ev -> Text) -> DecodeError ek ev -> Text
+renderDecodeError renderKeyError renderValueError = \case
+  KeyDecodeError err ->
+    "failed to decode keys: " <> renderKeyError err
+  ValueDecodeError err ->
+    "failed to decode values: " <> renderValueError err
 
 getVIntPrefixedBytes :: Get ByteString
 getVIntPrefixedBytes =
@@ -113,14 +116,14 @@ bMD5 =
   Builder.byteString . convert
 {-# INLINE bMD5 #-}
 
-getMetadata :: Get [(Text, Text)]
+getMetadata :: Get Metadata
 getMetadata = do
   n <- fromIntegral <$> Binary.getWord32le
-  replicateM n $
+  fmap Metadata . replicateM n $
     (,) <$> getTextWritable <*> getTextWritable
 
-bMetadata :: [(Text, Text)] -> Builder
-bMetadata xs =
+bMetadata :: Metadata -> Builder
+bMetadata (Metadata xs) =
   let
     kv (k, v) =
       bTextWritable k <>
@@ -213,7 +216,8 @@ bCompressedBlock marker b =
   bVIntPrefixedBytes (compressedValueSizes b) <>
   bVIntPrefixedBytes (compressedValues b)
 
-decompressLazy :: Lazy.ByteString -> Either DecompressError Lazy.ByteString
+-- TODO make strict using ByteString.createN byteSwap32 and peekByteOff
+decompressLazy :: Lazy.ByteString -> Either BinaryError Lazy.ByteString
 decompressLazy lbs =
   let
     getChunk = do
@@ -237,15 +241,9 @@ decompressLazy lbs =
       decompressedSize <- Binary.getWord32be
       getChunks $ fromIntegral decompressedSize
   in
-    case Binary.runGetOrFail get lbs of
-      Left (_, _, msg) ->
-        Left . DecompressBinaryError $ T.pack msg
-      Right ("", _, bss) ->
-        Right $ L.fromChunks bss
-      Right (bs, _, _) ->
-        Left . DecompressDidNotConsumeAll $ L.length bs
+    second L.fromChunks $ runGet get lbs
 
-decompressStrict :: Strict.ByteString -> Either DecompressError Strict.ByteString
+decompressStrict :: Strict.ByteString -> Either BinaryError Strict.ByteString
 decompressStrict =
   fmap L.toStrict . decompressLazy . L.fromStrict
 
@@ -277,7 +275,7 @@ compressStrict uncompressed =
           Builder.word32BE (fromIntegral compressedSize) <>
           Builder.byteString compressed
 
-decompressBlock :: CompressedBlock -> Either DecompressError EncodedBlock
+decompressBlock :: CompressedBlock -> Either BinaryError EncodedBlock
 decompressBlock b =
   EncodedBlock
     <$> pure (compressedCount b)
@@ -294,3 +292,32 @@ compressBlock b =
     (compressStrict $ encodedKeys b)
     (compressStrict $ encodedValueSizes b)
     (compressStrict $ encodedValues b)
+
+decodeBlock ::
+  WritableCodec ek vk k ->
+  WritableCodec ev vv v ->
+  EncodedBlock ->
+  Either (DecodeError ek ev) (Block vk vv k v)
+decodeBlock keyCodec valueCodec b = do
+  keys <- first KeyDecodeError $
+    writableDecode keyCodec (encodedCount b) (encodedKeySizes b) (encodedKeys b)
+
+  values <- first ValueDecodeError $
+    writableDecode valueCodec (encodedCount b) (encodedValueSizes b) (encodedValues b)
+
+  return $ Block (encodedCount b) keys values
+
+encodeBlock ::
+  WritableCodec ek vk k ->
+  WritableCodec ev vv v ->
+  Block vk vv k v ->
+  EncodedBlock
+encodeBlock keyCodec valueCodec b =
+  let
+    (keySizes, keys) =
+      writableEncode keyCodec $ blockKeys b
+
+    (valueSizes, values) =
+      writableEncode valueCodec $ blockValues b
+  in
+    EncodedBlock (blockCount b) keySizes keys valueSizes values

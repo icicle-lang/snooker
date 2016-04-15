@@ -12,6 +12,9 @@ module Snooker.Conduit (
 
   , decodeEncodedBlocks
   , encodeEncodedBlocks
+
+  , decodeBlocks
+  , encodeBlocks
   ) where
 
 import           Control.Monad.Base (MonadBase)
@@ -34,35 +37,35 @@ import qualified Data.Text as T
 
 import           P
 
+import           Snooker.Binary
 import           Snooker.Codec
 import           Snooker.Data
+import           Snooker.Writable
 
 import           X.Control.Monad.Trans.Either (EitherT, hoistEither, left)
 
 
-data BinaryError =
-    BinaryError !Text
-    deriving (Eq, Ord, Show)
-
-data SnookerError =
+data SnookerError ek ev =
     CorruptHeader !BinaryError
-  | CorruptRecordBlock !BinaryError
-  | CorruptCompression !DecompressError
+  | CorruptCompressedBlock !BinaryError
+  | CorruptCompression !BinaryError
+  | CorruptRecords !(DecodeError ek ev)
     deriving (Eq, Ord, Show)
 
-renderBinaryError :: BinaryError -> Text
-renderBinaryError = \case
-  BinaryError msg ->
-    msg
-
-renderSnookerError :: SnookerError -> Text
-renderSnookerError = \case
+renderSnookerError :: (ek -> Text) -> (ev -> Text) -> SnookerError ek ev -> Text
+renderSnookerError renderKeyError renderValueError = \case
   CorruptHeader err ->
-    "Sequence file header was corrupt: " <> renderBinaryError err
-  CorruptRecordBlock err ->
-    "Sequence file record block was corrupt: " <> renderBinaryError err
+    "Sequence file header was corrupt: " <>
+    renderBinaryError err
+  CorruptCompressedBlock err ->
+    "Sequence file compressed block was corrupt: " <>
+    renderBinaryError err
   CorruptCompression err ->
-    "Sequence file record block compression was corrupt: " <> renderDecompressError err
+    "Sequence file compression was corrupt: " <>
+    renderBinaryError err
+  CorruptRecords err ->
+    "Sequence file records were corrupt: " <>
+    renderDecodeError renderKeyError renderValueError err
 
 sinkGet :: Monad m => Get a -> Sink ByteString m (Either BinaryError a)
 sinkGet g =
@@ -105,7 +108,7 @@ conduitGet g =
   in
     next
 
-sinkHeader :: Monad m => Sink ByteString m (Either SnookerError Header)
+sinkHeader :: Monad m => Sink ByteString m (Either (SnookerError ek ev) Header)
 sinkHeader =
   fmap (first CorruptHeader) $
     sinkGet getHeader
@@ -114,20 +117,31 @@ conduitDecodeCompressedBlock ::
   Functor m =>
   Monad m =>
   Digest MD5 ->
-  Conduit ByteString (EitherT SnookerError m) CompressedBlock
+  Conduit ByteString (EitherT (SnookerError ek ev) m) CompressedBlock
 conduitDecodeCompressedBlock marker =
-  hoist (firstT CorruptRecordBlock) . conduitGet $
+  hoist (firstT CorruptCompressedBlock) . conduitGet $
     getCompressedBlock marker
 
-conduitDecompressBlock :: Monad m => Conduit CompressedBlock (EitherT SnookerError m) EncodedBlock
+conduitDecompressBlock ::
+  Monad m =>
+  Conduit CompressedBlock (EitherT (SnookerError ek ev) m) EncodedBlock
 conduitDecompressBlock =
   Conduit.mapM (hoistEither . first CorruptCompression . decompressBlock)
+
+conduitDecodeBlock ::
+  Monad m =>
+  WritableCodec ek vk k ->
+  WritableCodec ev vv v ->
+  Conduit EncodedBlock (EitherT (SnookerError ek ev) m) (Block vk vv k v)
+conduitDecodeBlock keyCodec valueCodec =
+  Conduit.mapM (hoistEither . first CorruptRecords . decodeBlock keyCodec valueCodec)
 
 decodeCompressedBlocks ::
   Functor m =>
   Monad m =>
   ResumableSource m ByteString ->
-  EitherT SnookerError m (Header, ResumableSource (EitherT SnookerError m) CompressedBlock)
+  EitherT (SnookerError ek ev) m
+    (Header, ResumableSource (EitherT (SnookerError ek ev) m) CompressedBlock)
 decodeCompressedBlocks src0 = do
   (src1, eheader) <- lift $ src0 $$++ sinkHeader
   header <- hoistEither eheader
@@ -153,7 +167,8 @@ decodeEncodedBlocks ::
   Functor m =>
   Monad m =>
   ResumableSource m ByteString ->
-  EitherT SnookerError m (Header, ResumableSource (EitherT SnookerError m) EncodedBlock)
+  EitherT (SnookerError ek ev) m
+    (Header, ResumableSource (EitherT (SnookerError ek ev) m) EncodedBlock)
 decodeEncodedBlocks =
   secondT (second ($=+ conduitDecompressBlock)) . decodeCompressedBlocks
 
@@ -164,3 +179,33 @@ encodeEncodedBlocks ::
   Conduit EncodedBlock m ByteString
 encodeEncodedBlocks header =
   Conduit.map compressBlock =$= encodeCompressedBlocks header
+
+decodeBlocks ::
+  Functor m =>
+  Monad m =>
+  WritableCodec ek vk k ->
+  WritableCodec ev vv v ->
+  ResumableSource m ByteString ->
+  EitherT (SnookerError ek ev) m
+    (Metadata, ResumableSource (EitherT (SnookerError ek ev) m) (Block vk vv k v))
+decodeBlocks keyCodec valueCodec =
+  secondT (bimap headerMetadata ($=+ conduitDecodeBlock keyCodec valueCodec)) . decodeEncodedBlocks
+
+encodeBlocks ::
+  MonadBase base m =>
+  PrimMonad base =>
+  WritableCodec ek vk k ->
+  WritableCodec ev vv v ->
+  Digest MD5 ->
+  Metadata ->
+  Conduit (Block vk vv k v) m ByteString
+encodeBlocks keyCodec valueCodec sync metadata =
+  let
+    header =
+      Header
+        (writableClass keyCodec)
+        (writableClass valueCodec)
+        metadata
+        sync
+  in
+    Conduit.map (encodeBlock keyCodec valueCodec) =$= encodeEncodedBlocks header
