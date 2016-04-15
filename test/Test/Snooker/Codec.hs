@@ -7,6 +7,7 @@ module Test.Snooker.Codec where
 import           Disorder.Core.Tripping (tripping)
 
 import           Snooker.Codec
+import           Snooker.Writable
 
 import           P
 
@@ -26,6 +27,13 @@ prop_compressed_block_tripping (ArbitraryMD5 md5) =
 
 prop_compress_tripping =
   tripping compressBlock decompressBlock
+
+prop_null_bytes_block =
+  let
+    kc = nullWritable
+    vc = bytesWritable
+  in
+    tripping (encodeBlock kc vc) (decodeBlock kc vc)
 
 return []
 tests =

@@ -25,11 +25,14 @@ library
                      , cryptonite                      == 0.15.*
                      , memory                          >= 0.11       && < 0.13
                      , mmorph                          == 1.0.*
+                     , mutable-containers              == 0.3.*
                      , primitive                       == 0.6.*
                      , resourcet                       == 1.1.*
                      , text                            == 1.2.*
                      , transformers                    >= 0.4        && < 0.6
                      , transformers-base               == 0.4.*
+                     , vector                          == 0.11.*
+                     , void                            == 0.7.*
 
   ghc-options:
                        -Wall
@@ -40,10 +43,12 @@ library
   exposed-modules:
                        Paths_ambiata_snooker
                        Snooker
+                       Snooker.Binary
                        Snooker.Codec
                        Snooker.Conduit
                        Snooker.Data
                        Snooker.VInt
+                       Snooker.Writable
 
 test-suite test
   type:
@@ -70,11 +75,13 @@ test-suite test
                      , conduit                         == 1.2.*
                      , cryptonite                      == 0.15.*
                      , mmorph                          == 1.0.*
+                     , mutable-containers              == 0.3.*
                      , QuickCheck                      >= 2.8.2      && < 2.9
                      , quickcheck-instances            == 0.3.*
                      , text                            == 1.2.*
                      , transformers                    >= 0.4        && < 0.6
-
+                     , vector                          == 0.11.*
+                     , void                            == 0.7.*
 
 test-suite test-io
   type:
@@ -107,3 +114,4 @@ test-suite test-io
                      , quickcheck-instances            == 0.3.*
                      , resourcet                       == 1.1.*
                      , text                            == 1.2.*
+                     , vector                          == 0.11.*

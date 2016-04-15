@@ -2,7 +2,9 @@
 {-# LANGUAGE NoImplicitPrelude #-}
 module Snooker.Data (
     ClassName(..)
+  , Metadata(..)
   , Header(..)
+  , Block(..)
   , EncodedBlock(..)
   , CompressedBlock(..)
   ) where
@@ -27,12 +29,28 @@ instance Show ClassName where
   showsPrec =
     gshowsPrec
 
+newtype Metadata =
+  Metadata {
+      unMetadata :: [(Text, Text)]
+    } deriving (Eq, Ord, Generic)
+
+instance Show Metadata where
+  showsPrec =
+    gshowsPrec
+
 data Header =
   Header {
       headerKeyType :: !ClassName
     , headerValueType :: !ClassName
-    , headerMetadata :: ![(Text, Text)]
+    , headerMetadata :: !Metadata
     , headerSync :: !(Digest MD5)
+    } deriving (Eq, Ord, Show, Generic)
+
+data Block vk vv k v =
+  Block {
+      blockCount :: !Int
+    , blockKeys :: !(vk k)
+    , blockValues :: !(vv v)
     } deriving (Eq, Ord, Show, Generic)
 
 data EncodedBlock =
