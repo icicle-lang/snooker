@@ -6,7 +6,7 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Test.Snooker.Factset where
 
-import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
+import           Control.Monad.Trans.Resource (runResourceT)
 
 import           Crypto.Hash (Digest, MD5, digestFromByteString)
 
@@ -30,16 +30,14 @@ import           Snooker.Conduit
 import           Snooker.Data
 import           Snooker.Writable
 
-import           System.IO (IO)
-
-import           Test.QuickCheck (Property, quickCheckAll, once, conjoin)
+import           Test.QuickCheck (quickCheckAll, once, conjoin)
 import           Test.QuickCheck ((.&&.), (===))
 import           Test.QuickCheck.Property (property, counterexample, succeeded, failed)
 import           Test.QuickCheck.Instances ()
 
 import           Test.Snooker.Util
 
-import           X.Control.Monad.Trans.Either (EitherT, runEitherT)
+import           X.Control.Monad.Trans.Either (runEitherT)
 
 
 fileSync :: Maybe (Digest MD5)
@@ -60,14 +58,6 @@ prop_read_header =
           , headerMetadata hdr === Metadata []
           , Just (headerSync hdr) === fileSync
           ]
-
-renderSnookerError' :: (Show ek, Show ev) => SnookerError ek ev -> Text
-renderSnookerError' =
-  renderSnookerError (T.pack . show) (T.pack . show)
-
-testEitherResource :: (Show ek, Show ev) => EitherT (SnookerError ek ev) (ResourceT IO) Property -> Property
-testEitherResource =
-  testIO . runResourceT . fmap (squashRender renderSnookerError') . runEitherT
 
 prop_blocks =
   once . testEitherResource $ do
