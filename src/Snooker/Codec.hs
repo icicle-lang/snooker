@@ -107,8 +107,8 @@ getMD5 = do
   case digestFromByteString bs of
     Nothing ->
       fail $ "invalid MD5 hash: " <> Char8.unpack (Base16.encode bs)
-    Just md5 ->
-      pure md5
+    Just x ->
+      pure x
 {-# INLINE getMD5 #-}
 
 bMD5 :: Digest MD5 -> Builder

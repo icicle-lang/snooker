@@ -38,8 +38,8 @@ shrinkMD5 =
     Nothing ->
       const []
     Just zero ->
-      \md5 ->
-        if md5 == zero then
+      \x ->
+        if x == zero then
           []
         else
           [zero]
