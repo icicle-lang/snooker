@@ -115,11 +115,12 @@ genBlock ::
   Arbitrary k =>
   Arbitrary v =>
   Gen (Block vk vv k v)
-genBlock = do
-  ks <- listOf arbitrary
-  vs <- vectorOf (length ks) arbitrary
-  pure $
-    Block (length ks) (Generic.fromList ks) (Generic.fromList vs)
+genBlock =
+  genFromMaybe $ do
+    ks <- listOf arbitrary
+    vs <- vectorOf (length ks) arbitrary
+    pure $
+      mkBlock (Generic.fromList ks) (Generic.fromList vs)
 
 shrinkBlock ::
   Generic.Vector vk k =>
@@ -132,13 +133,21 @@ shrinkBlock ::
   [Block vk vv k v]
 shrinkBlock =
   let
-    fixup (Block len ks vs) =
+    fixup b =
       let
-        n = len `min` Generic.length ks `min` Generic.length vs
+        ks =
+          blockKeys b
+
+        vs =
+          blockValues b
+
+        n =
+          Generic.length ks `min`
+          Generic.length vs
       in
-        Block n (Generic.take n ks) (Generic.take n vs)
+        mkBlock (Generic.take n ks) (Generic.take n vs)
   in
-    fmap fixup . genericShrink
+    mapMaybe fixup . genericShrink
 
 instance Arbitrary ArbitraryMD5 where
   arbitrary =

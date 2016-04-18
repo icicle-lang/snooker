@@ -15,6 +15,7 @@ module Snooker.Conduit (
 
   , decodeBlocks
   , encodeBlocks
+  , encodeBlocks'
   ) where
 
 import           Control.Monad.Base (MonadBase)
@@ -35,6 +36,7 @@ import           Data.Conduit (yield, await, leftover)
 import           Data.Conduit.ByteString.Builder (builderToByteString)
 import qualified Data.Conduit.List as Conduit
 import qualified Data.Text as T
+import qualified Data.Vector.Generic as Generic
 
 import           P
 
@@ -142,6 +144,8 @@ conduitDecompressBlock =
 
 conduitDecodeBlock ::
   Monad m =>
+  Generic.Vector vk k =>
+  Generic.Vector vv v =>
   WritableCodec ek vk k ->
   WritableCodec ev vv v ->
   Conduit EncodedBlock (EitherT (SnookerError ek ev) m) (Block vk vv k v)
@@ -195,6 +199,8 @@ encodeEncodedBlocks header =
 decodeBlocks ::
   Functor m =>
   Monad m =>
+  Generic.Vector vk k =>
+  Generic.Vector vv v =>
   WritableCodec ek vk k ->
   WritableCodec ev vv v ->
   ResumableSource m ByteString ->
@@ -222,6 +228,7 @@ encodeBlocks ::
   MonadIO m =>
   MonadBase base m =>
   PrimMonad base =>
+  Generic.Vector vk k =>
   WritableCodec ek vk k ->
   WritableCodec ev vv v ->
   Metadata ->
@@ -233,6 +240,7 @@ encodeBlocks keyCodec valueCodec metadata = do
 encodeBlocks' ::
   MonadBase base m =>
   PrimMonad base =>
+  Generic.Vector vk k =>
   Digest MD5 ->
   WritableCodec ek vk k ->
   WritableCodec ev vv v ->
