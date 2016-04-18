@@ -85,7 +85,7 @@ nullWritable :: WritableCodec Void Unboxed.Vector ()
 nullWritable =
   genericNullWritable
 
-genericBytesWritable :: Functor v => Show (v Int) => Show (v ByteString) => Generic.Vector v ByteString => WritableCodec WritableError v ByteString
+genericBytesWritable :: Generic.Vector v ByteString => WritableCodec WritableError v ByteString
 genericBytesWritable =
   let
     encodeSizes =
