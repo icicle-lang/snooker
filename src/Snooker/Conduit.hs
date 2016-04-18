@@ -15,6 +15,7 @@ module Snooker.Conduit (
 
   , decodeBlocks
   , encodeBlocks
+  , encodeBlocks'
   ) where
 
 import           Control.Monad.Base (MonadBase)
