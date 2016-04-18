@@ -1,24 +1,28 @@
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 module Snooker.MD5 (
     randomMD5
   ) where
 
-import           Crypto.Hash (Digest, MD5, hash)
+import           Crypto.Hash (Digest, MD5, digestFromByteString)
 
-import           Control.Monad.IO.Class (MonadIO(..))
-
-import qualified Data.ByteString.Lazy as L
-import qualified Data.UUID as UUID
-import           Data.UUID.V4 (nextRandom)
+import qualified Data.ByteString.Base16 as Base16
 
 import           P
+import qualified Prelude
 
 
--- | Generate a random MD5, Hadoop style:
---
---   https://github.com/apache/hadoop/blob/513ec3de194f705ca342de16829e1f85be227e7f/hadoop-common-project/hadoop-common/src/main/java/org/apache/hadoop/io/SequenceFile.java#L847
---
-randomMD5 :: MonadIO m => m (Digest MD5)
+-- | Used in sequence files so that you can seek into the middle of a file and
+--   then synchronise with record starts and ends by scanning for this value.
+randomMD5 :: Digest MD5
 randomMD5 =
-  liftIO $ liftM (hash . L.toStrict . UUID.toByteString) nextRandom
+  let
+    -- chosen by fair dice roll
+    magic =
+      "1BADdeadC0DEfaceFEEDbeefF00Dcafe"
+  in
+    case digestFromByteString . fst $ Base16.decode magic of
+      Nothing ->
+        Prelude.error "Snooker.MD5.randomMD5: the guy who sold me this function guaranteed it was total"
+      Just md5 ->
+        md5
