@@ -50,6 +50,8 @@ data SnookerError ek ev =
   | CorruptCompressedBlock !BinaryError
   | CorruptCompression !BinaryError
   | CorruptRecords !(DecodeError ek ev)
+  | UnexpectedKeyType !ClassName !ClassName
+  | UnexpectedValueType !ClassName !ClassName
     deriving (Eq, Ord, Show)
 
 renderSnookerError :: (ek -> Text) -> (ev -> Text) -> SnookerError ek ev -> Text
@@ -66,6 +68,14 @@ renderSnookerError renderKeyError renderValueError = \case
   CorruptRecords err ->
     "Sequence file records were corrupt: " <>
     renderDecodeError renderKeyError renderValueError err
+  UnexpectedKeyType expected actual ->
+    "Sequence file had an unexpected key type:" <>
+    "\n  expected <" <> unClassName expected <> ">" <>
+    "\n  but was  <" <> unClassName actual <> ">"
+  UnexpectedValueType expected actual ->
+    "Sequence file had an unexpected value type:" <>
+    "\n  expected <" <> unClassName expected <> ">" <>
+    "\n  but was  <" <> unClassName actual <> ">"
 
 sinkGet :: Monad m => Get a -> Sink ByteString m (Either BinaryError a)
 sinkGet g =
@@ -188,8 +198,23 @@ decodeBlocks ::
   ResumableSource m ByteString ->
   EitherT (SnookerError ek ev) m
     (Metadata, ResumableSource (EitherT (SnookerError ek ev) m) (Block vk vv k v))
-decodeBlocks keyCodec valueCodec =
-  secondT (bimap headerMetadata ($=+ conduitDecodeBlock keyCodec valueCodec)) . decodeEncodedBlocks
+decodeBlocks keyCodec valueCodec file = do
+  (header, encoded) <- decodeEncodedBlocks file
+
+  unless (headerKeyType header == writableClass keyCodec) . left $
+    UnexpectedKeyType (headerKeyType header) (writableClass keyCodec)
+
+  unless (headerValueType header == writableClass valueCodec) . left $
+    UnexpectedValueType (headerValueType header) (writableClass valueCodec)
+
+  let
+    metadata =
+      headerMetadata header
+
+    blocks =
+      encoded $=+ conduitDecodeBlock keyCodec valueCodec
+
+  return (metadata, blocks)
 
 encodeBlocks ::
   MonadBase base m =>

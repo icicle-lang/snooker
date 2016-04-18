@@ -1,3 +1,4 @@
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -33,6 +34,7 @@ import           System.IO (IO)
 
 import           Test.QuickCheck (Property, quickCheckAll, once, conjoin)
 import           Test.QuickCheck ((.&&.), (===))
+import           Test.QuickCheck.Property (property, counterexample, succeeded, failed)
 import           Test.QuickCheck.Instances ()
 
 import           Test.Snooker.Util
@@ -59,24 +61,24 @@ prop_read_header =
           , Just (headerSync hdr) === fileSync
           ]
 
+renderSnookerError' :: (Show ek, Show ev) => SnookerError ek ev -> Text
+renderSnookerError' =
+  renderSnookerError (T.pack . show) (T.pack . show)
+
 testEitherResource :: (Show ek, Show ev) => EitherT (SnookerError ek ev) (ResourceT IO) Property -> Property
 testEitherResource =
-  let
-    renderError =
-      renderSnookerError (T.pack . show) (T.pack . show)
-  in
-    testIO . runResourceT . fmap (squashRender renderError) . runEitherT
+  testIO . runResourceT . fmap (squashRender renderSnookerError') . runEitherT
 
 prop_blocks =
   once . testEitherResource $ do
 
     let
-      path =
-        "data/expression-2014-06-02"
-
       withFile f c = do
         (Metadata [], blocks) <-
-          decodeBlocks nullWritable bytesWritable . newResumableSource $ sourceFile path
+          decodeBlocks nullWritable bytesWritable .
+          newResumableSource $
+          sourceFile "data/expression-2014-06-02"
+
         blocks $$+- Conduit.map f =$= c
 
     nrecords <- withFile blockCount Conduit.sum
@@ -88,6 +90,28 @@ prop_blocks =
       nkeys === 20 .&&.
       Boxed.length values === 20 .&&.
       sum (fmap B.length values) === 657
+
+prop_invalid_key_val =
+  let
+    tryDecode = do
+      _ <-
+        decodeBlocks bytesWritable nullWritable .
+        newResumableSource $
+        sourceFile "data/expression-2014-06-02"
+      return ()
+
+    check = \case
+      Left (UnexpectedKeyType _ _) ->
+        property succeeded
+      Left err ->
+        counterexample (show err) .
+        counterexample (T.unpack $ renderSnookerError' err) $
+        property failed
+      Right () ->
+        counterexample "Expected failure: UnexpectedKeyType" $
+        property failed
+  in
+    testIO . fmap (once . check) . runResourceT $ runEitherT tryDecode
 
 return []
 tests =
