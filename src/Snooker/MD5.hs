@@ -12,6 +12,8 @@ import           P
 import qualified Prelude
 
 
+-- | Used in sequence files so that you can seek into the middle of a file and
+--   then synchronise with record starts and ends by scanning for this value.
 randomMD5 :: Digest MD5
 randomMD5 =
   let
