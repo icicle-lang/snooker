@@ -18,6 +18,7 @@ module Snooker.Conduit (
   ) where
 
 import           Control.Monad.Base (MonadBase)
+import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Morph (MFunctor(..))
 import           Control.Monad.Primitive (PrimMonad)
 import           Control.Monad.Trans.Class (lift)
@@ -40,6 +41,7 @@ import           P
 import           Snooker.Binary
 import           Snooker.Codec
 import           Snooker.Data
+import           Snooker.MD5
 import           Snooker.Writable
 
 import           X.Control.Monad.Trans.Either (EitherT, hoistEither, left)
@@ -217,14 +219,26 @@ decodeBlocks keyCodec valueCodec file = do
   return (metadata, blocks)
 
 encodeBlocks ::
+  MonadIO m =>
   MonadBase base m =>
   PrimMonad base =>
   WritableCodec ek vk k ->
   WritableCodec ev vv v ->
-  Digest MD5 ->
   Metadata ->
   Conduit (Block vk vv k v) m ByteString
-encodeBlocks keyCodec valueCodec sync metadata =
+encodeBlocks keyCodec valueCodec metadata = do
+  sync <- randomMD5
+  encodeBlocks' sync keyCodec valueCodec metadata
+
+encodeBlocks' ::
+  MonadBase base m =>
+  PrimMonad base =>
+  Digest MD5 ->
+  WritableCodec ek vk k ->
+  WritableCodec ev vv v ->
+  Metadata ->
+  Conduit (Block vk vv k v) m ByteString
+encodeBlocks' sync keyCodec valueCodec metadata =
   let
     header =
       Header
