@@ -226,9 +226,8 @@ encodeBlocks ::
   WritableCodec ev vv v ->
   Metadata ->
   Conduit (Block vk vv k v) m ByteString
-encodeBlocks keyCodec valueCodec metadata = do
-  sync <- randomMD5
-  encodeBlocks' sync keyCodec valueCodec metadata
+encodeBlocks =
+  encodeBlocks' randomMD5
 
 encodeBlocks' ::
   MonadBase base m =>
