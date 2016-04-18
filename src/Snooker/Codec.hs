@@ -21,7 +21,6 @@ import           Crypto.Hash (Digest, MD5, digestFromByteString)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Binary
 import           Data.ByteArray (convert)
-import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString as B
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16 as Base16
@@ -29,9 +28,12 @@ import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Builder.Extra as Builder
 import qualified Data.ByteString.Char8 as Char8
+import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy as Lazy
+import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+import qualified Data.Vector.Generic as Generic
 import           Data.Word (Word8)
 
 import           P
@@ -47,12 +49,17 @@ import           Text.Printf (printf)
 
 
 data DecodeError ek ev =
-    KeyDecodeError !ek
+    BlockLengthMismatch !Int !Int
+  | KeyDecodeError !ek
   | ValueDecodeError !ev
     deriving (Eq, Ord, Show)
 
 renderDecodeError :: (ek -> Text) -> (ev -> Text) -> DecodeError ek ev -> Text
 renderDecodeError renderKeyError renderValueError = \case
+  BlockLengthMismatch ks vs ->
+    "failed to construct block:" <>
+    "\n  number of keys = " <> T.pack (show ks) <>
+    "\n  number of vals = " <> T.pack (show vs)
   KeyDecodeError err ->
     "failed to decode keys: " <> renderKeyError err
   ValueDecodeError err ->
@@ -294,6 +301,8 @@ compressBlock b =
     (compressStrict $ encodedValues b)
 
 decodeBlock ::
+  Generic.Vector vk k =>
+  Generic.Vector vv v =>
   WritableCodec ek vk k ->
   WritableCodec ev vv v ->
   EncodedBlock ->
@@ -305,9 +314,11 @@ decodeBlock keyCodec valueCodec b = do
   values <- first ValueDecodeError $
     writableDecode valueCodec (encodedCount b) (encodedValueSizes b) (encodedValues b)
 
-  return $ Block (encodedCount b) keys values
+  maybeToRight (BlockLengthMismatch (Generic.length keys) (Generic.length values)) $
+    mkBlock keys values
 
 encodeBlock ::
+  Generic.Vector vk k =>
   WritableCodec ek vk k ->
   WritableCodec ev vv v ->
   Block vk vv k v ->

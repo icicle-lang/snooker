@@ -4,7 +4,13 @@ module Snooker.Data (
     ClassName(..)
   , Metadata(..)
   , Header(..)
-  , Block(..)
+
+  , Block
+  , mkBlock
+  , blockCount
+  , blockKeys
+  , blockValues
+
   , EncodedBlock(..)
   , CompressedBlock(..)
   ) where
@@ -12,6 +18,7 @@ module Snooker.Data (
 import           Crypto.Hash (Digest, MD5)
 
 import           Data.ByteString (ByteString)
+import qualified Data.Vector.Generic as Generic
 
 import           GHC.Generics (Generic)
 
@@ -48,10 +55,22 @@ data Header =
 
 data Block vk vv k v =
   Block {
-      blockCount :: !Int
-    , blockKeys :: !(vk k)
+      blockKeys :: !(vk k)
     , blockValues :: !(vv v)
     } deriving (Eq, Ord, Show, Generic)
+
+-- | Get the number of records in a 'Block'.
+blockCount :: Generic.Vector vk k => Block vk vv k v -> Int
+blockCount =
+  Generic.length . blockKeys
+
+-- | Create a 'Block', must have the same number of keys and values.
+mkBlock :: (Generic.Vector vk k, Generic.Vector vv v) => vk k -> vv v -> Maybe (Block vk vv k v)
+mkBlock ks vs =
+  if Generic.length ks == Generic.length vs then
+    Just $ Block ks vs
+  else
+    Nothing
 
 data EncodedBlock =
   EncodedBlock {
