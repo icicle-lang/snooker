@@ -4,11 +4,13 @@
 module Snooker.Codec (
     getHeader
   , getCompressedBlock
+  , decompressByteString
   , decompressBlock
   , decodeBlock
 
   , bHeader
   , bCompressedBlock
+  , compressByteString
   , compressBlock
   , encodeBlock
 
@@ -21,14 +23,14 @@ import           Crypto.Hash (Digest, MD5, digestFromByteString)
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Binary
 import           Data.ByteArray (convert)
-import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString as B
 import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16 as Base16
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
-import qualified Data.ByteString.Builder.Extra as Builder
 import qualified Data.ByteString.Char8 as Char8
+import           Data.ByteString.Internal (ByteString(..))
+import qualified Data.ByteString.Internal as B
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Text.Encoding as T
@@ -40,6 +42,7 @@ import qualified Snapper
 
 import           Snooker.Binary
 import           Snooker.Data
+import           Snooker.Storable
 import           Snooker.VInt
 import           Snooker.Writable
 
@@ -243,12 +246,12 @@ decompressLazy lbs =
   in
     second L.fromChunks $ runGet get lbs
 
-decompressStrict :: Strict.ByteString -> Either BinaryError Strict.ByteString
-decompressStrict =
+decompressByteString :: Strict.ByteString -> Either BinaryError Strict.ByteString
+decompressByteString =
   fmap L.toStrict . decompressLazy . L.fromStrict
 
-compressStrict :: Strict.ByteString -> Strict.ByteString
-compressStrict uncompressed =
+compressByteString :: Strict.ByteString -> Strict.ByteString
+compressByteString uncompressed =
   let
     compressed =
       Snapper.compress uncompressed
@@ -258,40 +261,33 @@ compressStrict uncompressed =
 
     compressedSize =
       B.length compressed
-
-    builderSize =
-      4 + 4 + compressedSize
-
-    fromBuilder =
-      L.toStrict .
-      Builder.toLazyByteStringWith (Builder.untrimmedStrategy builderSize 0) L.empty
   in
     case uncompressedSize of
       0 ->
         B.pack [0x0, 0x0, 0x0, 0x0]
       _ ->
-        fromBuilder $
-          Builder.word32BE (fromIntegral uncompressedSize) <>
-          Builder.word32BE (fromIntegral compressedSize) <>
-          Builder.byteString compressed
+        B.unsafeCreate (4 + 4 + compressedSize) $ \ptr -> do
+          pokeWord32be ptr 0 (fromIntegral uncompressedSize)
+          pokeWord32be ptr 4 (fromIntegral compressedSize)
+          pokeByteString ptr 8 compressed
 
 decompressBlock :: CompressedBlock -> Either BinaryError EncodedBlock
 decompressBlock b =
   EncodedBlock
     <$> pure (compressedCount b)
-    <*> (decompressStrict $ compressedKeySizes b)
-    <*> (decompressStrict $ compressedKeys b)
-    <*> (decompressStrict $ compressedValueSizes b)
-    <*> (decompressStrict $ compressedValues b)
+    <*> (decompressByteString $ compressedKeySizes b)
+    <*> (decompressByteString $ compressedKeys b)
+    <*> (decompressByteString $ compressedValueSizes b)
+    <*> (decompressByteString $ compressedValues b)
 
 compressBlock :: EncodedBlock -> CompressedBlock
 compressBlock b =
   CompressedBlock
     (encodedCount b)
-    (compressStrict $ encodedKeySizes b)
-    (compressStrict $ encodedKeys b)
-    (compressStrict $ encodedValueSizes b)
-    (compressStrict $ encodedValues b)
+    (compressByteString $ encodedKeySizes b)
+    (compressByteString $ encodedKeys b)
+    (compressByteString $ encodedValueSizes b)
+    (compressByteString $ encodedValues b)
 
 decodeBlock ::
   WritableCodec ek vk k ->

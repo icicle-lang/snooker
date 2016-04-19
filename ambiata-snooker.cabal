@@ -48,8 +48,37 @@ library
                        Snooker.Conduit
                        Snooker.Data
                        Snooker.MD5
+                       Snooker.Storable
                        Snooker.VInt
                        Snooker.Writable
+
+executable snooker-bench
+    ghc-options:
+                       -Wall -threaded -O2
+    main-is:
+                       main/snooker-bench.hs
+
+    build-depends:
+                       base
+                     , ambiata-p
+                     , ambiata-snooker
+                     , ambiata-x-eithert
+                     , binary                          >= 0.7        && < 0.9
+                     , bytestring                      == 0.10.*
+                     , conduit                         == 1.2.*
+                     , conduit-combinators             == 1.0.*
+                     , conduit-extra                   == 1.1.*
+                     , mmorph                          == 1.0.*
+                     , mwc-random                      == 0.13.*
+                     , QuickCheck                      >= 2.8.2      && < 2.9
+                     , quickcheck-instances            == 0.3.*
+                     , resourcet                       == 1.1.*
+                     , text                            == 1.2.*
+                     , thyme                           == 0.3.*
+                     , transformers                    >= 0.4        && < 0.6
+                     , vector                          == 0.11.*
+                     , vector-space                    == 0.10.*
+                     , void                            == 0.7.*
 
 test-suite test
   type:

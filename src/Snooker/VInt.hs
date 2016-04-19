@@ -1,10 +1,15 @@
 {-# LANGUAGE DoAndIfThenElse #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 module Snooker.VInt (
     getVInt
   , getVInt64
   , bVInt
   , bVInt64
+
+  , maxSizeVInt
+  , pokeVInt
+  , pokeVInt64
   ) where
 
 import           Data.Binary.Get (Get)
@@ -14,6 +19,12 @@ import qualified Data.ByteString as B
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
 import           Data.Word (Word8)
+
+import           Foreign.Ptr (Ptr)
+
+import           System.IO (IO)
+
+import           Snooker.Storable
 
 import           P
 
@@ -127,3 +138,69 @@ bVInt :: Int -> Builder
 bVInt =
   bVInt64 . fromIntegral
 {-# INLINE bVInt #-}
+
+maxSizeVInt :: Int
+maxSizeVInt =
+  9
+{-# INLINE maxSizeVInt #-}
+
+pokeVInt64 :: Ptr x -> Int -> Int64 -> IO Int
+pokeVInt64 p off v =
+  if v >= -112 && v <= 127 then do
+    pokeWord8 p off (fromIntegral v)
+    pure 1
+  else
+    let
+      (base, value) =
+        if v >= 0 then
+          (-113, v)
+        else
+          (-121, complement v)
+    in
+      if value < bit 8 then do
+        pokeWord8 p (off+0) base
+        pokeWord8 p (off+1) (fromIntegral value)
+        pure 2
+      else if value < bit 16 then do
+        pokeWord8 p (off+0) (base - 1)
+        pokeWord8 p (off+1) (fromIntegral $ value `shiftR` 8)
+        pokeWord8 p (off+2) (fromIntegral value)
+        pure 3
+      else if value < bit 24 then do
+        pokeWord8 p (off+0) (base - 2)
+        pokeWord8 p (off+1) (fromIntegral $ value `shiftR` 16)
+        pokeWord8 p (off+2) (fromIntegral $ value `shiftR` 8)
+        pokeWord8 p (off+3) (fromIntegral value)
+        pure 4
+      else if value < bit 32 then do
+        pokeWord8 p (off+0) (base - 3)
+        pokeWord32be p (off+0) (fromIntegral $ value)
+        pure 5
+      else if value < bit 40 then do
+        pokeWord8 p (off+0) (base - 4)
+        pokeWord32be p (off+1) (fromIntegral $ value `shiftR` 8)
+        pokeWord8 p (off+2) (fromIntegral value)
+        pure 6
+      else if value < bit 48 then do
+        pokeWord8 p (off+0) (base - 5)
+        pokeWord32be p (off+1) (fromIntegral $ value `shiftR` 16)
+        pokeWord8 p (off+2) (fromIntegral $ value `shiftR` 8)
+        pokeWord8 p (off+3) (fromIntegral value)
+        pure 7
+      else if value < bit 56 then do
+        pokeWord8 p (off+0) (base - 6)
+        pokeWord32be p (off+1) (fromIntegral $ value `shiftR` 24)
+        pokeWord8 p (off+2) (fromIntegral $ value `shiftR` 16)
+        pokeWord8 p (off+3) (fromIntegral $ value `shiftR` 8)
+        pokeWord8 p (off+4) (fromIntegral value)
+        pure 8
+      else do
+        pokeWord8 p (off+0) (base - 7)
+        pokeWord64be p (off+1) (fromIntegral value)
+        pure 9
+{-# INLINABLE pokeVInt64 #-}
+
+pokeVInt :: Ptr x -> Int -> Int -> IO Int
+pokeVInt p off v =
+  pokeVInt64 p off (fromIntegral v)
+{-# INLINE pokeVInt #-}

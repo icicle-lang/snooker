@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -16,7 +17,6 @@ module Snooker.Writable (
 import           Control.Monad.ST (runST)
 
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Builder as Builder
 import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString.Internal as B
 import qualified Data.ByteString.Lazy as L
@@ -30,6 +30,7 @@ import           P
 
 import           Snooker.Binary
 import           Snooker.Data
+import           Snooker.Storable
 import           Snooker.VInt
 
 
@@ -85,32 +86,44 @@ nullWritable :: WritableCodec Void Unboxed.Vector ()
 nullWritable =
   genericNullWritable
 
-genericBytesWritable :: Generic.Vector v ByteString => WritableCodec WritableError v ByteString
+genericBytesWritable ::
+  Generic.Vector v ByteString =>
+  WritableCodec WritableError v ByteString
 genericBytesWritable =
   let
-    encodeSizes =
-      L.toStrict .
-      Builder.toLazyByteString .
-      mconcat .
-      fmap (bVInt . (+ 4) . B.length) .
-      Generic.toList
+    sizesSize ss =
+      maxSizeVInt * Generic.length ss
 
-    encodeBytes bs =
-      Builder.word32BE (fromIntegral $ B.length bs) <>
-      Builder.byteString bs
+    bytesSize =
+      Generic.foldl' (\n bs -> n + 4 + (B.length bs)) 0
 
-    encodeAllBytes =
-      L.toStrict .
-      Builder.toLazyByteString .
-      mconcat .
-      fmap encodeBytes .
-      Generic.toList
+    encodeSizes ss =
+      {-# SCC encodeSizes #-}
+      B.unsafeCreateUptoN (sizesSize ss) $ \ptr ->
+        let
+          go !n bs = do
+            !sz <- pokeVInt ptr n (B.length bs + 4)
+            pure $! n + sz
+        in
+          Generic.foldM go 0 ss
+
+    encodeBytes bss =
+      {-# SCC encodeBytes #-}
+      B.unsafeCreate (bytesSize bss) $ \ptr ->
+        let
+          go !n bs = do
+            pokeWord32be ptr n (fromIntegral $ B.length bs)
+            pokeByteString ptr (n + 4) bs
+            pure $! n + 4 + B.length bs
+        in
+          Generic.foldM_ go 0 bss
 
     encode xs =
-      (encodeSizes xs, encodeAllBytes xs)
+      (encodeSizes xs, encodeBytes xs)
 
     decode n sbs vbs = do
       sizes <-
+        {-# SCC decodeSizes #-}
         first WritableBinaryError .
         runGet (Unboxed.replicateM n getVInt) $
         L.fromStrict sbs
@@ -123,6 +136,7 @@ genericBytesWritable =
         Left $ WritableSizesMismatch expected actual
 
       return $
+        {-# SCC unsafeSplit #-}
         unsafeSplit (B.drop 4) vbs sizes
   in
     WritableCodec (ClassName "org.apache.hadoop.io.BytesWritable") encode decode
