@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
@@ -66,22 +67,24 @@ vintNegative firstByte =
 
 getVInt64 :: Get Int64
 getVInt64 = do
-  firstByte <- fromIntegral <$> Binary.getWord8
+  firstByte <- fromIntegral <$!> Binary.getWord8
 
   if vintSingle firstByte then
-    pure $ fromIntegral firstByte
+    pure $! fromIntegral firstByte
   else do
     let
       go :: Int64 -> Word8 -> Int64
-      go x b =
+      go !x b =
         (x `shiftL` 8) .|. fromIntegral b
+      {-# INLINE go #-}
 
-    x <- B.foldl' go 0 <$> Binary.getByteString (vintRemaining firstByte)
+    !x <- B.foldl' go 0 <$!> Binary.getByteString (vintRemaining firstByte)
 
     if vintNegative firstByte then
-      pure $ complement x
+      pure $! complement x
     else
       pure x
+{-# INLINE getVInt64 #-}
 
 getVInt :: Get Int
 getVInt =
