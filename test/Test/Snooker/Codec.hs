@@ -25,7 +25,10 @@ prop_header_tripping =
 prop_compressed_block_tripping (ArbitraryMD5 md5) =
   binaryTripping (bCompressedBlock md5) (getCompressedBlock md5)
 
-prop_compress_tripping =
+prop_compress_bytes_tripping =
+  tripping compressByteString decompressByteString
+
+prop_compress_block_tripping =
   tripping compressBlock decompressBlock
 
 prop_null_bytes_block =
