@@ -28,6 +28,8 @@ library
                      , mutable-containers              == 0.3.*
                      , primitive                       == 0.6.*
                      , resourcet                       == 1.1.*
+                     , streaming                       == 0.1.*
+                     , streaming-bytestring            == 0.1.*
                      , text                            == 1.2.*
                      , transformers                    >= 0.4        && < 0.6
                      , transformers-base               == 0.4.*
@@ -49,6 +51,7 @@ library
                        Snooker.Data
                        Snooker.MD5
                        Snooker.Storable
+                       Snooker.Streaming
                        Snooker.VInt
                        Snooker.Writable
 
@@ -73,6 +76,8 @@ executable snooker-bench
                      , QuickCheck                      >= 2.8.2      && < 2.9
                      , quickcheck-instances            == 0.3.*
                      , resourcet                       == 1.1.*
+                     , streaming                       == 0.1.*
+                     , streaming-bytestring            == 0.1.*
                      , text                            == 1.2.*
                      , thyme                           == 0.3.*
                      , transformers                    >= 0.4        && < 0.6

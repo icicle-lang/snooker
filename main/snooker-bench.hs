@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 
@@ -9,6 +10,7 @@ import           Control.Monad.IO.Class (MonadIO(..))
 import           Data.AffineSpace ((.-.))
 import           Data.ByteString (ByteString)
 import qualified Data.ByteString as B
+import qualified Data.ByteString.Streaming as BS
 import           Data.Conduit ((=$=), ($$+-), runConduit, newResumableSource)
 import           Data.Conduit (Sink)
 import           Data.Conduit.Binary (sourceFile, sinkFile)
@@ -24,9 +26,13 @@ import           Data.Void (Void)
 
 import           P
 
+import qualified Snooker.Streaming as S
 import           Snooker.Conduit
 import           Snooker.Data
 import           Snooker.Writable
+
+import           Streaming (Stream, Of(..))
+import qualified Streaming.Prelude as S
 
 import           System.IO (IO, FilePath, IOMode(..))
 import           System.IO (print, withFile, hFileSize)
@@ -77,12 +83,26 @@ readSequence path sink = do
     sourceFile path
   hoist (firstT ReadError) blocks $$+- sink
 
+readSequenceX :: FilePath -> (forall r. Stream (Of BenchBlock) BenchIO r -> BenchIO a) -> BenchIO a
+readSequenceX path sink = do
+  (_, blocks) <-
+    firstT ReadError .
+    S.decodeBlocks nullWritable bytesWritable $
+    BS.readFile path
+  sink (hoist (firstT ReadError) blocks)
+
 writeSequence :: FilePath -> [BenchBlock] -> BenchIO ()
 writeSequence path blocks =
   runConduit $
     Conduit.sourceList blocks =$=
     encodeBlocks nullWritable bytesWritable (Metadata []) =$=
     sinkFile path
+
+writeSequenceX :: FilePath -> [BenchBlock] -> BenchIO ()
+writeSequenceX path =
+  BS.writeFile path .
+  S.encodeBlocks nullWritable bytesWritable (Metadata []) .
+  S.each
 
 bench :: MonadIO m => Text -> [(Text, Text, m Double)] -> m a -> m a
 bench title stats io = do
@@ -127,7 +147,8 @@ mainE =
         , (25, 20000)
         , (50, 10000)
         , (100, 5000)
-        , (200, 2500) ]
+        , (200, 2500)
+        , (500, 1000) ]
 
     for_ trials $ \(xblock, nblocks) -> do
       block <- liftIO $ embiggen xblock original
@@ -143,13 +164,19 @@ mainE =
           fromIntegral nblocks * (blockKiB / 1024)
 
       bench
-        (T.pack $ printf "Write %d x %.2f KiB blocks (%.2f MiB)" nblocks blockKiB sizeMiB)
+        (T.pack $ printf "Conduit write %d x %.2f KiB blocks (%.2f MiB)" nblocks blockKiB sizeMiB)
         [ ("uncompressed", "MiB/s", pure sizeMiB)
         , ("compressed", "MiB/s", getFileSize path) ] $
           writeSequence path (List.replicate nblocks block)
 
+      --bench
+      --  (T.pack $ printf "Streaming write %d x %.2f KiB blocks (%.2f MiB)" nblocks blockKiB sizeMiB)
+      --  [ ("uncompressed", "MiB/s", pure sizeMiB)
+      --  , ("compressed", "MiB/s", getFileSize path) ] $
+      --    writeSequenceX path (List.replicate nblocks block)
+
       bench
-        (T.pack $ printf "Read %d x %.2f KiB blocks (%.2f MiB)" nblocks blockKiB sizeMiB)
+        (T.pack $ printf "Conduit read %d x %.2f KiB blocks (%.2f MiB)" nblocks blockKiB sizeMiB)
         [ ("uncompressed", "MiB/s", pure sizeMiB)
         , ("compressed", "MiB/s", getFileSize path) ] $ do
           !_ <-
@@ -157,6 +184,16 @@ mainE =
               Conduit.map (fromIntegral . blockSize) =$=
               Conduit.fold (+) (0 :: Int64)
           pure ()
+
+      --bench
+      --  (T.pack $ printf "Streaming read %d x %.2f KiB blocks (%.2f MiB)" nblocks blockKiB sizeMiB)
+      --  [ ("uncompressed", "MiB/s", pure sizeMiB)
+      --  , ("compressed", "MiB/s", getFileSize path) ] $ do
+      --    !_ <-
+      --      readSequenceX path $
+      --        S.fold_ (+) (0 :: Int64) id .
+      --        S.map (fromIntegral . blockSize)
+      --    pure ()
 
 
 main :: IO ()
