@@ -4,6 +4,8 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Test.Snooker.Codec where
 
+import qualified Data.ByteString as B
+
 import           Disorder.Core.Tripping (tripping)
 
 import           Snooker.Codec
@@ -27,6 +29,22 @@ prop_compressed_block_tripping (ArbitraryMD5 md5) =
 
 prop_compress_bytes_tripping =
   tripping compressByteString decompressByteString
+
+prop_compress_bytes_tripping0 n =
+  let
+    word32 =
+      4
+
+    -- add 'n' empty chunks to the end of the compressed bytes this is
+    -- perfectly legal and sometimes appears in sequence files even though it
+    -- is redundant.
+    emptyBlocks =
+      B.replicate (n * word32) 0
+
+    compress0 =
+      (<> emptyBlocks) . compressByteString
+  in
+    tripping compress0 decompressByteString
 
 prop_compress_block_tripping =
   tripping compressBlock decompressBlock
