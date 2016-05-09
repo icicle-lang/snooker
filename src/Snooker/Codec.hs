@@ -1,3 +1,4 @@
+{-# LANGUAGE DoAndIfThenElse #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -225,16 +226,27 @@ decompressLazy lbs =
   let
     getChunk = do
       compressedSize <- Binary.getWord32be
-      compressedBytes <- Binary.getByteString $ fromIntegral compressedSize
-      case Snapper.decompress compressedBytes of
-        Nothing ->
-          fail "could not decompress chunk"
-        Just bs ->
-          pure bs
+      if compressedSize == 0 then
+        pure B.empty
+      else do
+        compressedBytes <- Binary.getByteString $ fromIntegral compressedSize
+        case Snapper.decompress compressedBytes of
+          Nothing ->
+            fail "could not decompress chunk"
+          Just bs ->
+            pure bs
 
     getChunks remaining =
-      if remaining == 0 then
-        return []
+      if remaining == 0 then do
+        done <- Binary.isEmpty
+        if done then
+          return []
+        else do
+          bs <- getChunk
+          -- no bytes remaining, all trailing chunks must be empty
+          unless (B.null bs) $
+            fail $ "found unexpected chunk containing " <> show (B.length bs) <> " bytes"
+          getChunks remaining
       else do
         bs <- getChunk
         bss <- getChunks (remaining - B.length bs)
