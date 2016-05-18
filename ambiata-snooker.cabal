@@ -31,7 +31,7 @@ library
                      , text                            == 1.2.*
                      , transformers                    >= 0.4        && < 0.6
                      , transformers-base               == 0.4.*
-                     , vector                          == 0.11.*
+                     , vector                          >= 0.10       && < 0.12
                      , void                            == 0.7.*
 
   ghc-options:
@@ -76,7 +76,7 @@ executable snooker-bench
                      , text                            == 1.2.*
                      , thyme                           == 0.3.*
                      , transformers                    >= 0.4        && < 0.6
-                     , vector                          == 0.11.*
+                     , vector                          >= 0.10       && < 0.12
                      , vector-space                    == 0.10.*
                      , void                            == 0.7.*
 
@@ -111,7 +111,7 @@ test-suite test
                      , resourcet                       == 1.1.*
                      , text                            == 1.2.*
                      , transformers                    >= 0.4        && < 0.6
-                     , vector                          == 0.11.*
+                     , vector                          >= 0.10       && < 0.12
                      , void                            == 0.7.*
 
 test-suite test-io
@@ -145,4 +145,4 @@ test-suite test-io
                      , quickcheck-instances            == 0.3.*
                      , resourcet                       == 1.1.*
                      , text                            == 1.2.*
-                     , vector                          == 0.11.*
+                     , vector                          >= 0.10       && < 0.12
