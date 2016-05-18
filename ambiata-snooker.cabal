@@ -70,7 +70,7 @@ executable snooker-bench
                      , conduit-extra                   == 1.1.*
                      , mmorph                          == 1.0.*
                      , mwc-random                      == 0.13.*
-                     , QuickCheck                      >= 2.8.2      && < 2.9
+                     , QuickCheck                      >= 2.7        && < 2.9
                      , quickcheck-instances            == 0.3.*
                      , resourcet                       == 1.1.*
                      , text                            == 1.2.*
