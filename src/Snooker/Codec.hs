@@ -5,13 +5,14 @@
 module Snooker.Codec (
     getHeader
   , getCompressedBlock
-  , decompressByteString
+  , decompressChunks
   , decompressBlock
   , decodeBlock
 
   , bHeader
   , bCompressedBlock
-  , compressByteString
+  , compressChunk
+  , compressHadoopChunks
   , compressBlock
   , encodeBlock
 
@@ -221,8 +222,8 @@ bCompressedBlock marker b =
   bVIntPrefixedBytes (compressedValues b)
 
 -- TODO make strict using ByteString.createN byteSwap32 and peekByteOff
-decompressLazy :: Lazy.ByteString -> Either BinaryError Lazy.ByteString
-decompressLazy lbs =
+decompressChunksLazy :: Lazy.ByteString -> Either BinaryError Lazy.ByteString
+decompressChunksLazy lbs =
   let
     getChunk = do
       compressedSize <- Binary.getWord32be
@@ -258,12 +259,12 @@ decompressLazy lbs =
   in
     second L.fromChunks $ runGet get lbs
 
-decompressByteString :: Strict.ByteString -> Either BinaryError Strict.ByteString
-decompressByteString =
-  fmap L.toStrict . decompressLazy . L.fromStrict
+decompressChunks :: Strict.ByteString -> Either BinaryError Strict.ByteString
+decompressChunks =
+  fmap L.toStrict . decompressChunksLazy . L.fromStrict
 
-compressByteString :: Strict.ByteString -> Strict.ByteString
-compressByteString uncompressed =
+compressChunk :: Strict.ByteString -> Strict.ByteString
+compressChunk uncompressed =
   let
     compressed =
       Snapper.compress uncompressed
@@ -283,23 +284,47 @@ compressByteString uncompressed =
           pokeWord32be ptr 4 (fromIntegral compressedSize)
           pokeByteString ptr 8 compressed
 
+compressHadoopChunks :: Strict.ByteString -> Strict.ByteString
+compressHadoopChunks =
+  B.concat . fmap compressChunk . splitChunks hadoopMaximumChunkSize
+
+-- | When Hadoop is decoding snappy compressed chunks, it will accept any size
+--   of compressed data, then it will split the **compressed** data in to 64KiB
+--   chunks and try to decompress each in turn.
+--
+--   It assumes that snappy is some kind of magical compression box that allows
+--   you to split the compressed input on any byte boundary.
+--
+hadoopMaximumChunkSize :: Int
+hadoopMaximumChunkSize =
+  64 * 1024
+
+splitChunks :: Int -> Strict.ByteString -> [Strict.ByteString]
+splitChunks size bs =
+  case B.splitAt size bs of
+    (hd, tl) ->
+      if B.null tl then
+        [hd]
+      else
+        hd : splitChunks size tl
+
 decompressBlock :: CompressedBlock -> Either BinaryError EncodedBlock
 decompressBlock b =
   EncodedBlock
     <$> pure (compressedCount b)
-    <*> (decompressByteString $ compressedKeySizes b)
-    <*> (decompressByteString $ compressedKeys b)
-    <*> (decompressByteString $ compressedValueSizes b)
-    <*> (decompressByteString $ compressedValues b)
+    <*> (decompressChunks $ compressedKeySizes b)
+    <*> (decompressChunks $ compressedKeys b)
+    <*> (decompressChunks $ compressedValueSizes b)
+    <*> (decompressChunks $ compressedValues b)
 
 compressBlock :: EncodedBlock -> CompressedBlock
 compressBlock b =
   CompressedBlock
     (encodedCount b)
-    (compressByteString $ encodedKeySizes b)
-    (compressByteString $ encodedKeys b)
-    (compressByteString $ encodedValueSizes b)
-    (compressByteString $ encodedValues b)
+    (compressHadoopChunks $ encodedKeySizes b)
+    (compressHadoopChunks $ encodedKeys b)
+    (compressHadoopChunks $ encodedValueSizes b)
+    (compressHadoopChunks $ encodedValues b)
 
 decodeBlock ::
   WritableCodec ek vk k ->

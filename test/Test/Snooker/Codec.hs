@@ -28,7 +28,7 @@ prop_compressed_block_tripping (ArbitraryMD5 md5) =
   binaryTripping (bCompressedBlock md5) (getCompressedBlock md5)
 
 prop_compress_bytes_tripping =
-  tripping compressByteString decompressByteString
+  tripping compressHadoopChunks decompressChunks
 
 prop_compress_bytes_tripping0 n =
   let
@@ -42,9 +42,9 @@ prop_compress_bytes_tripping0 n =
       B.replicate (n * word32) 0
 
     compress0 =
-      (<> emptyBlocks) . compressByteString
+      (<> emptyBlocks) . compressChunk
   in
-    tripping compress0 decompressByteString
+    tripping compress0 decompressChunks
 
 prop_compress_block_tripping =
   tripping compressBlock decompressBlock
