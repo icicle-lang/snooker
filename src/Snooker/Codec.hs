@@ -288,6 +288,13 @@ compressHadoopChunks :: Strict.ByteString -> Strict.ByteString
 compressHadoopChunks =
   B.concat . fmap compressChunk . splitChunks hadoopMaximumChunkSize
 
+-- | When Hadoop is decoding snappy compressed chunks, it will accept any size
+--   of compressed data, then it will split the **compressed** data in to 64KiB
+--   chunks and try to decompress each in turn.
+--
+--   It assumes that snappy is some kind of magical compression box that allows
+--   you to split the compressed input on any byte boundary.
+--
 hadoopMaximumChunkSize :: Int
 hadoopMaximumChunkSize =
   64 * 1024
