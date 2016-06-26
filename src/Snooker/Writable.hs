@@ -14,13 +14,10 @@ module Snooker.Writable (
   , genericBytesWritable
   ) where
 
-import           Control.Monad.ST (runST)
-
 import qualified Data.ByteString as B
 import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString.Internal as B
 import qualified Data.ByteString.Lazy as L
-import           Data.Mutable (newRef, writeRef, readRef, asPRef)
 import qualified Data.Vector as Boxed
 import qualified Data.Vector.Generic as Generic
 import qualified Data.Vector.Unboxed as Unboxed
@@ -32,6 +29,8 @@ import           Snooker.Binary
 import           Snooker.Data
 import           Snooker.Storable
 import           Snooker.VInt
+
+import qualified X.Data.ByteString.Unsafe as B
 
 
 data WritableError =
@@ -45,26 +44,6 @@ data WritableCodec e v a =
     , writableEncode :: v a -> (ByteString, ByteString)
     , writableDecode :: Int -> ByteString -> ByteString -> Either e (v a)
     }
-
-unsafeSplit :: Generic.Vector v a => (ByteString -> a) -> ByteString -> Unboxed.Vector Int -> v a
-unsafeSplit f bs sizes =
-  runST $ do
-    offRef <- asPRef <$> newRef 0
-
-    Generic.generateM (Unboxed.length sizes) $ \idx -> do
-      let
-        len =
-          Unboxed.unsafeIndex sizes idx
-
-      off <- readRef offRef
-      writeRef offRef $ off + len
-
-      return . f $ unsafeSlice off len bs
-
-unsafeSlice :: Int -> Int -> ByteString -> ByteString
-unsafeSlice off len (PS ptr poff _) =
-  PS ptr (poff + off) len
-{-# INLINE unsafeSlice #-}
 
 genericNullWritable :: Generic.Vector v () => WritableCodec Void v ()
 genericNullWritable =
@@ -137,7 +116,7 @@ genericBytesWritable =
 
       return $
         {-# SCC unsafeSplit #-}
-        unsafeSplit (B.drop 4) vbs sizes
+        B.unsafeSplits (B.drop 4) vbs sizes
   in
     WritableCodec (ClassName "org.apache.hadoop.io.BytesWritable") encode decode
 
