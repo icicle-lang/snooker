@@ -7,10 +7,10 @@
 [build.validate]
   command = [["validate-respect"]]
 
-[build.dist-7-8]
-
 [build.dist-7-10]
 
-[build.branches-7-8]
+[build.dist-8-0]
 
 [build.branches-7-10]
+
+[build.branches-8-0]

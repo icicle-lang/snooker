@@ -126,8 +126,6 @@ shrinkBlock ::
   Generic.Vector vv v =>
   Arbitrary (vk k) =>
   Arbitrary (vv v) =>
-  Arbitrary k =>
-  Arbitrary v =>
   Block vk vv k v ->
   [Block vk vv k v]
 shrinkBlock =

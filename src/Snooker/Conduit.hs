@@ -18,7 +18,6 @@ module Snooker.Conduit (
   ) where
 
 import           Control.Monad.Base (MonadBase)
-import           Control.Monad.IO.Class (MonadIO(..))
 import           Control.Monad.Morph (MFunctor(..))
 import           Control.Monad.Primitive (PrimMonad)
 import           Control.Monad.Trans.Class (lift)
@@ -126,7 +125,6 @@ sinkHeader =
     sinkGet getHeader
 
 conduitDecodeCompressedBlock ::
-  Functor m =>
   Monad m =>
   Digest MD5 ->
   Conduit ByteString (EitherT (SnookerError ek ev) m) CompressedBlock
@@ -149,7 +147,6 @@ conduitDecodeBlock keyCodec valueCodec =
   Conduit.mapM (hoistEither . first CorruptRecords . decodeBlock keyCodec valueCodec)
 
 decodeCompressedBlocks ::
-  Functor m =>
   Monad m =>
   ResumableSource m ByteString ->
   EitherT (SnookerError ek ev) m
@@ -176,7 +173,6 @@ encodeCompressedBlocks header =
     builders =$= builderToByteString
 
 decodeEncodedBlocks ::
-  Functor m =>
   Monad m =>
   ResumableSource m ByteString ->
   EitherT (SnookerError ek ev) m
@@ -193,7 +189,6 @@ encodeEncodedBlocks header =
   Conduit.map compressBlock =$= encodeCompressedBlocks header
 
 decodeBlocks ::
-  Functor m =>
   Monad m =>
   WritableCodec ek vk k ->
   WritableCodec ev vv v ->
@@ -219,7 +214,6 @@ decodeBlocks keyCodec valueCodec file = do
   return (metadata, blocks)
 
 encodeBlocks ::
-  MonadIO m =>
   MonadBase base m =>
   PrimMonad base =>
   WritableCodec ek vk k ->
