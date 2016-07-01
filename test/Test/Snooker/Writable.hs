@@ -14,7 +14,7 @@ import           P
 
 import           Test.Snooker.Arbitrary ()
 
-import           Test.QuickCheck (Arbitrary, Property)
+import           Test.QuickCheck (Property)
 import           Test.QuickCheck (forAllProperties, quickCheckWithResult)
 import           Test.QuickCheck (stdArgs, maxSuccess)
 import           Test.QuickCheck.Instances ()
@@ -22,7 +22,6 @@ import           Test.QuickCheck.Instances ()
 
 writableTripping ::
   Generic.Vector v a =>
-  Arbitrary (v a) =>
   Eq e =>
   Eq (v a) =>
   Show e =>
