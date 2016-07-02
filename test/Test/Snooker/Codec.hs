@@ -16,9 +16,12 @@ import           P
 import           Test.Snooker.Arbitrary (ArbitraryMD5(..))
 import           Test.Snooker.Util
 
+import           Test.QuickCheck (conjoin, (===), getNonNegative)
 import           Test.QuickCheck (forAllProperties, quickCheckWithResult)
-import           Test.QuickCheck (stdArgs, maxSuccess)
+import           Test.QuickCheck (forAllShrink, arbitrary, shrink, scale)
+import           Test.QuickCheck (stdArgs, maxSuccess, counterexample)
 import           Test.QuickCheck.Instances ()
+import           Test.QuickCheck.Property (property, failed)
 
 
 prop_header_tripping =
@@ -29,6 +32,20 @@ prop_compressed_block_tripping (ArbitraryMD5 md5) =
 
 prop_compress_bytes_tripping =
   tripping compressHadoopChunks decompressChunks
+
+prop_compress_many_bytes_tripping =
+  forAllShrink (scale (* 10000) (getNonNegative <$> arbitrary)) shrink $ \n ->
+    case decompressChunks . compressHadoopChunks $ B.replicate n 0 of
+      Left err ->
+        counterexample ("Failed to roundtrip " <> show n <> " bytes") .
+        counterexample (show err) $
+        property failed
+      Right bs ->
+        conjoin [
+            B.length bs === n
+          , counterexample "Corruption detected, expected every byte to be == 0" $
+            property $ B.all (== 0) bs
+          ]
 
 prop_compress_bytes_tripping0 n =
   let
@@ -58,4 +75,4 @@ prop_null_bytes_block =
 
 return []
 tests =
-  $forAllProperties $ quickCheckWithResult (stdArgs {maxSuccess = 1000})
+  $forAllProperties $ quickCheckWithResult (stdArgs {maxSuccess = 100})

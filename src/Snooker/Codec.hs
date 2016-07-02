@@ -221,11 +221,31 @@ bCompressedBlock marker b =
   bVIntPrefixedBytes (compressedValueSizes b) <>
   bVIntPrefixedBytes (compressedValues b)
 
--- TODO make strict using ByteString.createN byteSwap32 and peekByteOff
+--
+-- Reads the following block structure:
+--
+--   Block {
+--       chunks :: [Chunk]
+--     }
+--
+--   Chunk {
+--       uncompressedSize :: Word32
+--     , compressedParts :: [Part]
+--     }
+--
+--   Part {
+--       compressedSize :: Word32
+--     , compressedBytes :: ByteString
+--     }
+--
+-- Would be nice if this was over strict ByteString instead. This could be done
+-- using ByteString.createN byteSwap32 and peekByteOff, but perhaps it's a bit
+-- complicated and not worth it.
+--
 decompressChunksLazy :: Lazy.ByteString -> Either BinaryError Lazy.ByteString
 decompressChunksLazy lbs =
   let
-    getChunk = do
+    getPart = do
       compressedSize <- Binary.getWord32be
       if compressedSize == 0 then
         pure B.empty
@@ -237,27 +257,28 @@ decompressChunksLazy lbs =
           Just bs ->
             pure bs
 
-    getChunks remaining =
-      if remaining == 0 then do
-        done <- Binary.isEmpty
-        if done then
-          return []
-        else do
-          bs <- getChunk
-          -- no bytes remaining, all trailing chunks must be empty
-          unless (B.null bs) $
-            fail $ "found unexpected chunk containing " <> show (B.length bs) <> " bytes"
-          getChunks remaining
+    getParts remaining =
+      if remaining == 0 then
+        return []
       else do
-        bs <- getChunk
-        bss <- getChunks (remaining - B.length bs)
+        bs <- getPart
+        bss <- getParts (remaining - B.length bs)
         return $ bs : bss
 
-    get = do
-      decompressedSize <- Binary.getWord32be
-      getChunks $ fromIntegral decompressedSize
+    getChunk = do
+      uncompressedSize <- Binary.getWord32be
+      getParts $ fromIntegral uncompressedSize
+
+    getChunks = do
+      done <- Binary.isEmpty
+      if done then
+        return []
+      else do
+        bss <- getChunk
+        bsss <- getChunks
+        return $ bss <> bsss
   in
-    second L.fromChunks $ runGet get lbs
+    second L.fromChunks $ runGet getChunks lbs
 
 decompressChunks :: Strict.ByteString -> Either BinaryError Strict.ByteString
 decompressChunks =
