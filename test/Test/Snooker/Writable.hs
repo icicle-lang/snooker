@@ -38,13 +38,13 @@ writableVectorTripping lengthOf writable =
   in
     tripping encode decode
 
-xprop_null_tripping :: Property
-xprop_null_tripping =
+prop_null_tripping :: Property
+prop_null_tripping =
   gamble arbitrary $
     writableVectorTripping Generic.length nullWritable
 
-xprop_bytes_tripping :: Property
-xprop_bytes_tripping =
+prop_bytes_tripping :: Property
+prop_bytes_tripping =
   gamble arbitrary $
     writableVectorTripping Generic.length bytesWritable
 

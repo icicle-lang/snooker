@@ -17,6 +17,7 @@ import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           Data.Thyme.Clock (getCurrentTime, toSeconds)
 import qualified Data.Vector.Generic as Generic
+import qualified Data.Vector.Storable as Storable
 import qualified Data.Vector.Unboxed as Unboxed
 import           Data.Void (Void)
 
@@ -66,7 +67,7 @@ embiggen factor (Block n0 ks0 vs0) = do
 
 blockSize :: BenchBlock -> Int
 blockSize (Block _ _ vs) =
-  Unboxed.sum $ segmentedLengths vs
+  fromIntegral . Storable.sum $ segmentedLengths vs
 
 readSequence :: FilePath -> Sink BenchBlock BenchIO a -> BenchIO a
 readSequence path sink = do
@@ -84,28 +85,36 @@ writeSequence path blocks =
     encodeBlocks nullWritable segmentedBytesWritable (Metadata []) =$=
     sinkFile path
 
-bench :: MonadIO m => Text -> [(Text, Text, m Double)] -> m a -> m a
-bench title stats io = do
-  time0 <- liftIO getCurrentTime
-  x <- io
-  time1 <- liftIO getCurrentTime
+data Display =
+    NoDisplay
+  | Display
 
-  let
-    secs :: Double
-    secs =
-      toSeconds $ time1 .-. time0
+bench :: MonadIO m => Display -> Text -> [(Text, Text, m Double)] -> m a -> m a
+bench disp title stats io =
+  case disp of
+    NoDisplay ->
+      io
+    Display -> do
+      time0 <- liftIO getCurrentTime
+      x <- io
+      time1 <- liftIO getCurrentTime
 
-  liftIO $ T.putStrLn ""
-  liftIO $ T.putStrLn title
-  liftIO $ T.putStrLn $ T.replicate (T.length title) "="
+      let
+        secs :: Double
+        secs =
+          toSeconds $ time1 .-. time0
 
-  forM_ stats $ \(name, units, getValue) -> do
-    value <- getValue
-    liftIO $ printf "%s = %.2f %s\n" (T.unpack name) (value / secs) (T.unpack units)
+      liftIO $ T.putStrLn ""
+      liftIO $ T.putStrLn title
+      liftIO $ T.putStrLn $ T.replicate (T.length title) "="
 
-  liftIO $ printf "runnning time = %.2f seconds\n" secs
+      forM_ stats $ \(name, units, getValue) -> do
+        value <- getValue
+        liftIO $ printf "%s = %.2f %s\n" (T.unpack name) (value / secs) (T.unpack units)
 
-  return x
+      liftIO $ printf "runnning time = %.2f seconds\n" secs
+
+      return x
 
 getFileSize :: MonadIO m => FilePath -> m Double
 getFileSize path =
@@ -127,7 +136,9 @@ mainE =
         , (25, 20000)
         , (50, 10000)
         , (100, 5000)
-        , (200, 2500) ]
+        , (200, 2500)
+        , (400, 1250)
+        , (800, 625) ]
 
     for_ trials $ \(xblock, nblocks) -> do
       block <- liftIO $ embiggen xblock original
@@ -142,13 +153,13 @@ mainE =
         sizeMiB =
           fromIntegral nblocks * (blockKiB / 1024)
 
-      bench
+      bench Display
         (T.pack $ printf "Write %d x %.2f KiB blocks (%.2f MiB)" nblocks blockKiB sizeMiB)
         [ ("uncompressed", "MiB/s", pure sizeMiB)
         , ("compressed", "MiB/s", getFileSize path) ] $
           writeSequence path (List.replicate nblocks block)
 
-      bench
+      bench Display
         (T.pack $ printf "Read %d x %.2f KiB blocks (%.2f MiB)" nblocks blockKiB sizeMiB)
         [ ("uncompressed", "MiB/s", pure sizeMiB)
         , ("compressed", "MiB/s", getFileSize path) ] $ do

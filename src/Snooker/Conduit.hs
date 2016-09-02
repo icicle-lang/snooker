@@ -92,6 +92,7 @@ sinkGet g =
         return $ Right v
   in
     feed $ runGetIncremental g
+{-# INLINE sinkGet #-}
 
 conduitGet :: Monad m => Get a -> Conduit ByteString (EitherT BinaryError m) a
 conduitGet g =
@@ -118,11 +119,13 @@ conduitGet g =
           feed $ pushChunk (runGetIncremental g) bs
   in
     next
+{-# INLINE conduitGet #-}
 
 sinkHeader :: Monad m => Sink ByteString m (Either (SnookerError xk xv) Header)
 sinkHeader =
   fmap (first CorruptHeader) $
     sinkGet getHeader
+{-# INLINE sinkHeader #-}
 
 conduitDecodeCompressedBlock ::
   Monad m =>
@@ -131,12 +134,14 @@ conduitDecodeCompressedBlock ::
 conduitDecodeCompressedBlock marker =
   hoist (firstT CorruptCompressedBlock) . conduitGet $
     getCompressedBlock marker
+{-# INLINE conduitDecodeCompressedBlock #-}
 
 conduitDecompressBlock ::
   Monad m =>
   Conduit CompressedBlock (EitherT (SnookerError xk xv) m) EncodedBlock
 conduitDecompressBlock =
   Conduit.mapM (hoistEither . first CorruptCompression . decompressBlock)
+{-# INLINE conduitDecompressBlock #-}
 
 conduitDecodeBlock ::
   Monad m =>
@@ -145,6 +150,7 @@ conduitDecodeBlock ::
   Conduit EncodedBlock (EitherT (SnookerError xk xv) m) (Block ks vs)
 conduitDecodeBlock keyCodec valueCodec =
   Conduit.mapM (hoistEither . first CorruptRecords . decodeBlock keyCodec valueCodec)
+{-# INLINE conduitDecodeBlock #-}
 
 decodeCompressedBlocks ::
   Monad m =>
@@ -158,6 +164,7 @@ decodeCompressedBlocks src0 = do
     blocks =
       hoist lift src1 $=+ conduitDecodeCompressedBlock (headerSync header)
   return (header, blocks)
+{-# INLINE decodeCompressedBlocks #-}
 
 encodeCompressedBlocks ::
   MonadBase base m =>
@@ -171,6 +178,7 @@ encodeCompressedBlocks header =
       Conduit.map . bCompressedBlock $ headerSync header
   in
     builders =$= builderToByteString
+{-# INLINE encodeCompressedBlocks #-}
 
 decodeEncodedBlocks ::
   Monad m =>
@@ -179,6 +187,7 @@ decodeEncodedBlocks ::
     (Header, ResumableSource (EitherT (SnookerError xk xv) m) EncodedBlock)
 decodeEncodedBlocks =
   secondT (second ($=+ conduitDecompressBlock)) . decodeCompressedBlocks
+{-# INLINE decodeEncodedBlocks #-}
 
 encodeEncodedBlocks ::
   MonadBase base m =>
@@ -187,6 +196,7 @@ encodeEncodedBlocks ::
   Conduit EncodedBlock m ByteString
 encodeEncodedBlocks header =
   Conduit.map compressBlock =$= encodeCompressedBlocks header
+{-# INLINE encodeEncodedBlocks #-}
 
 decodeBlocks ::
   Monad m =>
@@ -212,6 +222,7 @@ decodeBlocks keyCodec valueCodec file = do
       encoded $=+ conduitDecodeBlock keyCodec valueCodec
 
   return (metadata, blocks)
+{-# INLINE decodeBlocks #-}
 
 encodeBlocks ::
   MonadBase base m =>
@@ -222,6 +233,7 @@ encodeBlocks ::
   Conduit (Block ks vs) m ByteString
 encodeBlocks =
   encodeBlocks' randomMD5
+{-# INLINE encodeBlocks #-}
 
 encodeBlocks' ::
   MonadBase base m =>
@@ -241,3 +253,4 @@ encodeBlocks' sync keyCodec valueCodec metadata =
         sync
   in
     Conduit.map (encodeBlock keyCodec valueCodec) =$= encodeEncodedBlocks header
+{-# INLINE encodeBlocks' #-}

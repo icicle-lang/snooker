@@ -11,14 +11,14 @@ module Snooker.Segmented (
 import qualified Data.ByteString as B
 import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.Vector as Boxed
-import qualified Data.Vector.Unboxed as Unboxed
+import qualified Data.Vector.Storable as Storable
 
 import           P
 
 data Segmented a =
   Segmented {
-      segmentedOffsets :: !(Unboxed.Vector Int)
-    , segmentedLengths :: !(Unboxed.Vector Int)
+      segmentedOffsets :: !(Storable.Vector Int64)
+    , segmentedLengths :: !(Storable.Vector Int64)
     , segmentedValues :: !a
     } deriving (Show)
 
@@ -29,33 +29,28 @@ instance Eq (Segmented ByteString) where
 
 segmentedLength :: Segmented a -> Int
 segmentedLength =
-  Unboxed.length . segmentedLengths
-{-# INLINE segmentedLength #-} 
+  Storable.length . segmentedLengths
+{-# INLINE segmentedLength #-}
 
 segmentedOfBytes :: Boxed.Vector ByteString -> Segmented ByteString
 segmentedOfBytes bss =
   let
-    loop (off0, len0) bs =
-      let
-        len =
-          B.length bs
-      in
-        (off0 + len0, len)
+    !lengths =
+      Storable.convert $
+      Boxed.map (fromIntegral . B.length) bss
 
-    (offsets, lengths) =
-      Unboxed.unzip $
-      Unboxed.convert $
-      Boxed.postscanl' loop (0, 0) bss
+    !offsets =
+      Storable.prescanl' (+) 0 lengths
   in
     -- TODO don't use list
-    Segmented offsets lengths . B.concat $ Boxed.toList bss
+    Segmented offsets lengths (B.concat $ Boxed.toList bss)
 {-# INLINE segmentedOfBytes #-}
 
 bytesOfSegmented :: Segmented ByteString -> Boxed.Vector ByteString
 bytesOfSegmented (Segmented offs lens (PS ptr off0 _)) =
   let
     loop !off !len =
-      PS ptr (off0 + off) len
+      PS ptr (off0 + fromIntegral off) (fromIntegral len)
   in
     Boxed.zipWith loop (Boxed.convert offs) (Boxed.convert lens)
 {-# INLINE bytesOfSegmented #-}
