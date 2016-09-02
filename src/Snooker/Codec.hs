@@ -51,12 +51,12 @@ import           Snooker.Writable
 import           Text.Printf (printf)
 
 
-data DecodeError ek ev =
-    KeyDecodeError !ek
-  | ValueDecodeError !ev
+data DecodeError xk xv =
+    KeyDecodeError !xk
+  | ValueDecodeError !xv
     deriving (Eq, Ord, Show)
 
-renderDecodeError :: (ek -> Text) -> (ev -> Text) -> DecodeError ek ev -> Text
+renderDecodeError :: (xk -> Text) -> (xv -> Text) -> DecodeError xk xv -> Text
 renderDecodeError renderKeyError renderValueError = \case
   KeyDecodeError err ->
     "failed to decode keys: " <> renderKeyError err
@@ -348,10 +348,10 @@ compressBlock b =
     (compressHadoopChunks $ encodedValues b)
 
 decodeBlock ::
-  WritableCodec ek vk k ->
-  WritableCodec ev vv v ->
+  WritableCodec xk ks ->
+  WritableCodec xv vs ->
   EncodedBlock ->
-  Either (DecodeError ek ev) (Block vk vv k v)
+  Either (DecodeError xk xv) (Block ks vs)
 decodeBlock keyCodec valueCodec b = do
   keys <- first KeyDecodeError $
     writableDecode keyCodec (encodedCount b) (encodedKeySizes b) (encodedKeys b)
@@ -362,9 +362,9 @@ decodeBlock keyCodec valueCodec b = do
   return $ Block (encodedCount b) keys values
 
 encodeBlock ::
-  WritableCodec ek vk k ->
-  WritableCodec ev vv v ->
-  Block vk vv k v ->
+  WritableCodec xk ks ->
+  WritableCodec xv vs ->
+  Block ks vs ->
   EncodedBlock
 encodeBlock keyCodec valueCodec b =
   let

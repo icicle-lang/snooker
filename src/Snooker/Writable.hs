@@ -12,6 +12,8 @@ module Snooker.Writable (
 
   , genericNullWritable
   , genericBytesWritable
+
+  , segmentedBytesWritable
   ) where
 
 import qualified Data.ByteString as B
@@ -27,6 +29,7 @@ import           P
 
 import           Snooker.Binary
 import           Snooker.Data
+import           Snooker.Segmented
 import           Snooker.Storable
 import           Snooker.VInt
 
@@ -38,14 +41,14 @@ data WritableError =
   | WritableSizesMismatch !Int !Int
     deriving (Eq, Ord, Show)
 
-data WritableCodec e v a =
+data WritableCodec x a =
   WritableCodec {
       writableClass :: ClassName
-    , writableEncode :: v a -> (ByteString, ByteString)
-    , writableDecode :: Int -> ByteString -> ByteString -> Either e (v a)
+    , writableEncode :: a -> (ByteString, ByteString)
+    , writableDecode :: Int -> ByteString -> ByteString -> Either x a
     }
 
-genericNullWritable :: Generic.Vector v () => WritableCodec Void v ()
+genericNullWritable :: Generic.Vector v () => WritableCodec Void (v ())
 genericNullWritable =
   let
     encodeSizes xs =
@@ -61,13 +64,13 @@ genericNullWritable =
   in
     WritableCodec (ClassName "org.apache.hadoop.io.NullWritable") encode decode
 
-nullWritable :: WritableCodec Void Unboxed.Vector ()
+nullWritable :: WritableCodec Void (Unboxed.Vector ())
 nullWritable =
   genericNullWritable
 
 genericBytesWritable ::
   Generic.Vector v ByteString =>
-  WritableCodec WritableError v ByteString
+  WritableCodec WritableError (v ByteString)
 genericBytesWritable =
   let
     sizesSize ss =
@@ -120,6 +123,71 @@ genericBytesWritable =
   in
     WritableCodec (ClassName "org.apache.hadoop.io.BytesWritable") encode decode
 
-bytesWritable :: WritableCodec WritableError Boxed.Vector ByteString
+bytesWritable :: WritableCodec WritableError (Boxed.Vector ByteString)
 bytesWritable =
   genericBytesWritable
+
+segmentedBytesWritable :: WritableCodec WritableError (Segmented ByteString)
+segmentedBytesWritable =
+  let
+    sizesSize bss =
+      maxSizeVInt * segmentedLength bss
+
+    bytesSize bss =
+      Unboxed.foldl' (\n len -> n + 4 + len) 0 $
+      segmentedLengths bss
+
+    encodeSizes bss =
+      {-# SCC seg_encodeSizes #-}
+      B.unsafeCreateUptoN (sizesSize bss) $ \ptr ->
+        let
+          go !n len = do
+            !sz <- pokeVInt ptr n (len + 4)
+            pure $! n + sz
+        in
+          Unboxed.foldM go 0 $
+          segmentedLengths bss
+
+    encodeBytes bss =
+      {-# SCC seg_encodeBytes #-}
+      B.unsafeCreate (bytesSize bss) $ \ptr ->
+        let
+          go !n bs = do
+            pokeWord32be ptr n (fromIntegral $ B.length bs)
+            pokeByteString ptr (n + 4) bs
+            pure $! n + 4 + B.length bs
+        in
+          Boxed.foldM_ go 0 $
+          bytesOfSegmented bss
+
+    encode xs =
+      (encodeSizes xs, encodeBytes xs)
+
+    decode n sbs vbs = do
+      lengths0 <-
+        {-# SCC seg_decodeSizes #-}
+        first WritableBinaryError .
+        runGet (Unboxed.replicateM n getVInt) $
+        L.fromStrict sbs
+
+      let
+        expected =
+          B.length vbs
+
+        actual =
+          Unboxed.sum lengths0
+
+      when (actual /= expected) $
+        Left $ WritableSizesMismatch expected actual
+
+      let
+        offsets =
+          Unboxed.prescanl' (\acc len -> acc + len) 4 lengths0
+
+        lengths =
+          Unboxed.map (subtract 4) lengths0
+
+      return $
+        Segmented offsets lengths vbs
+  in
+    WritableCodec (ClassName "org.apache.hadoop.io.BytesWritable") encode decode

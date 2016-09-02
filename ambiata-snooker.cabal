@@ -48,6 +48,7 @@ library
                        Snooker.Conduit
                        Snooker.Data
                        Snooker.MD5
+                       Snooker.Segmented
                        Snooker.Storable
                        Snooker.VInt
                        Snooker.Writable
@@ -97,6 +98,7 @@ test-suite test
                        base                            >= 3          && < 5
                      , ambiata-disorder-core
                      , ambiata-disorder-corpus
+                     , ambiata-disorder-jack
                      , ambiata-p
                      , ambiata-snooker
                      , ambiata-x-eithert
