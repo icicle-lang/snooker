@@ -6,44 +6,52 @@ module Test.Snooker.Writable where
 
 import qualified Data.Vector.Generic as Generic
 
-import           Disorder.Core.Tripping (tripping)
+import           Disorder.Jack (Property, gamble, tripping, arbitrary)
+import           Disorder.Jack (forAllProperties, quickCheckWithResult, stdArgs, maxSuccess)
 
+import           Snooker.Segmented
 import           Snooker.Writable
 
 import           P
 
 import           Test.Snooker.Arbitrary ()
 
-import           Test.QuickCheck (Property)
-import           Test.QuickCheck (forAllProperties, quickCheckWithResult)
-import           Test.QuickCheck (stdArgs, maxSuccess)
 import           Test.QuickCheck.Instances ()
 
 
-writableTripping ::
-  Generic.Vector v a =>
-  Eq e =>
-  Eq (v a) =>
-  Show e =>
-  Show (v a) =>
-  WritableCodec e v a  ->
-  v a ->
+writableVectorTripping ::
+  Eq x =>
+  Eq a =>
+  Show x =>
+  Show a =>
+  (a -> Int) ->
+  WritableCodec x a  ->
+  a ->
   Property
-writableTripping writable =
+writableVectorTripping lengthOf writable =
   let
     encode xs =
-      (Generic.length xs, writableEncode writable xs)
+      (lengthOf xs, writableEncode writable xs)
 
     decode (n, (sbs, vbs)) =
       writableDecode writable n sbs vbs
   in
     tripping encode decode
 
-prop_null_tripping =
-  writableTripping nullWritable
+xprop_null_tripping :: Property
+xprop_null_tripping =
+  gamble arbitrary $
+    writableVectorTripping Generic.length nullWritable
 
-prop_bytes_tripping =
-  writableTripping bytesWritable
+xprop_bytes_tripping :: Property
+xprop_bytes_tripping =
+  gamble arbitrary $
+    writableVectorTripping Generic.length bytesWritable
+
+prop_segmented_bytes_tripping :: Property
+prop_segmented_bytes_tripping =
+  gamble (segmentedOfBytes <$> arbitrary) $
+    writableVectorTripping segmentedLength segmentedBytesWritable
 
 return []
 tests =

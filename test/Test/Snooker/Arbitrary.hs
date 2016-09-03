@@ -1,4 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
@@ -114,7 +115,7 @@ genBlock ::
   Generic.Vector vv v =>
   Arbitrary k =>
   Arbitrary v =>
-  Gen (Block vk vv k v)
+  Gen (Block (vk k) (vv v))
 genBlock = do
   ks <- listOf arbitrary
   vs <- vectorOf (length ks) arbitrary
@@ -126,8 +127,8 @@ shrinkBlock ::
   Generic.Vector vv v =>
   Arbitrary (vk k) =>
   Arbitrary (vv v) =>
-  Block vk vv k v ->
-  [Block vk vv k v]
+  Block (vk k) (vv v) ->
+  [Block (vk k) (vv v)]
 shrinkBlock =
   let
     fixup (Block len ks vs) =
@@ -175,7 +176,7 @@ instance
   , Arbitrary (vv v)
   , Arbitrary k
   , Arbitrary v
-  ) => Arbitrary (Block vk vv k v) where
+  ) => Arbitrary (Block (vk k) (vv v)) where
   arbitrary =
     genBlock
   shrink =

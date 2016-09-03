@@ -46,16 +46,16 @@ import           Snooker.Writable
 import           X.Control.Monad.Trans.Either (EitherT, hoistEither, left)
 
 
-data SnookerError ek ev =
+data SnookerError xk xv =
     CorruptHeader !BinaryError
   | CorruptCompressedBlock !BinaryError
   | CorruptCompression !BinaryError
-  | CorruptRecords !(DecodeError ek ev)
+  | CorruptRecords !(DecodeError xk xv)
   | UnexpectedKeyType !ClassName !ClassName
   | UnexpectedValueType !ClassName !ClassName
     deriving (Eq, Ord, Show)
 
-renderSnookerError :: (ek -> Text) -> (ev -> Text) -> SnookerError ek ev -> Text
+renderSnookerError :: (xk -> Text) -> (xv -> Text) -> SnookerError xk xv -> Text
 renderSnookerError renderKeyError renderValueError = \case
   CorruptHeader err ->
     "Sequence file header was corrupt: " <>
@@ -119,7 +119,7 @@ conduitGet g =
   in
     next
 
-sinkHeader :: Monad m => Sink ByteString m (Either (SnookerError ek ev) Header)
+sinkHeader :: Monad m => Sink ByteString m (Either (SnookerError xk xv) Header)
 sinkHeader =
   fmap (first CorruptHeader) $
     sinkGet getHeader
@@ -127,30 +127,30 @@ sinkHeader =
 conduitDecodeCompressedBlock ::
   Monad m =>
   Digest MD5 ->
-  Conduit ByteString (EitherT (SnookerError ek ev) m) CompressedBlock
+  Conduit ByteString (EitherT (SnookerError xk xv) m) CompressedBlock
 conduitDecodeCompressedBlock marker =
   hoist (firstT CorruptCompressedBlock) . conduitGet $
     getCompressedBlock marker
 
 conduitDecompressBlock ::
   Monad m =>
-  Conduit CompressedBlock (EitherT (SnookerError ek ev) m) EncodedBlock
+  Conduit CompressedBlock (EitherT (SnookerError xk xv) m) EncodedBlock
 conduitDecompressBlock =
   Conduit.mapM (hoistEither . first CorruptCompression . decompressBlock)
 
 conduitDecodeBlock ::
   Monad m =>
-  WritableCodec ek vk k ->
-  WritableCodec ev vv v ->
-  Conduit EncodedBlock (EitherT (SnookerError ek ev) m) (Block vk vv k v)
+  WritableCodec xk ks ->
+  WritableCodec xv vs ->
+  Conduit EncodedBlock (EitherT (SnookerError xk xv) m) (Block ks vs)
 conduitDecodeBlock keyCodec valueCodec =
   Conduit.mapM (hoistEither . first CorruptRecords . decodeBlock keyCodec valueCodec)
 
 decodeCompressedBlocks ::
   Monad m =>
   ResumableSource m ByteString ->
-  EitherT (SnookerError ek ev) m
-    (Header, ResumableSource (EitherT (SnookerError ek ev) m) CompressedBlock)
+  EitherT (SnookerError xk xv) m
+    (Header, ResumableSource (EitherT (SnookerError xk xv) m) CompressedBlock)
 decodeCompressedBlocks src0 = do
   (src1, eheader) <- lift $ src0 $$++ sinkHeader
   header <- hoistEither eheader
@@ -175,8 +175,8 @@ encodeCompressedBlocks header =
 decodeEncodedBlocks ::
   Monad m =>
   ResumableSource m ByteString ->
-  EitherT (SnookerError ek ev) m
-    (Header, ResumableSource (EitherT (SnookerError ek ev) m) EncodedBlock)
+  EitherT (SnookerError xk xv) m
+    (Header, ResumableSource (EitherT (SnookerError xk xv) m) EncodedBlock)
 decodeEncodedBlocks =
   secondT (second ($=+ conduitDecompressBlock)) . decodeCompressedBlocks
 
@@ -190,11 +190,11 @@ encodeEncodedBlocks header =
 
 decodeBlocks ::
   Monad m =>
-  WritableCodec ek vk k ->
-  WritableCodec ev vv v ->
+  WritableCodec xk ks ->
+  WritableCodec xv vs ->
   ResumableSource m ByteString ->
-  EitherT (SnookerError ek ev) m
-    (Metadata, ResumableSource (EitherT (SnookerError ek ev) m) (Block vk vv k v))
+  EitherT (SnookerError xk xv) m
+    (Metadata, ResumableSource (EitherT (SnookerError xk xv) m) (Block ks vs))
 decodeBlocks keyCodec valueCodec file = do
   (header, encoded) <- decodeEncodedBlocks file
 
@@ -216,10 +216,10 @@ decodeBlocks keyCodec valueCodec file = do
 encodeBlocks ::
   MonadBase base m =>
   PrimMonad base =>
-  WritableCodec ek vk k ->
-  WritableCodec ev vv v ->
+  WritableCodec xk ks ->
+  WritableCodec xv vs ->
   Metadata ->
-  Conduit (Block vk vv k v) m ByteString
+  Conduit (Block ks vs) m ByteString
 encodeBlocks =
   encodeBlocks' randomMD5
 
@@ -227,10 +227,10 @@ encodeBlocks' ::
   MonadBase base m =>
   PrimMonad base =>
   Digest MD5 ->
-  WritableCodec ek vk k ->
-  WritableCodec ev vv v ->
+  WritableCodec xk ks ->
+  WritableCodec xv vs ->
   Metadata ->
-  Conduit (Block vk vv k v) m ByteString
+  Conduit (Block ks vs) m ByteString
 encodeBlocks' sync keyCodec valueCodec metadata =
   let
     header =

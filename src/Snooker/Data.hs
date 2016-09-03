@@ -46,11 +46,11 @@ data Header =
     , headerSync :: !(Digest MD5)
     } deriving (Eq, Ord, Show, Generic)
 
-data Block vk vv k v =
+data Block ks vs =
   Block {
       blockCount :: !Int
-    , blockKeys :: !(vk k)
-    , blockValues :: !(vv v)
+    , blockKeys :: !ks
+    , blockValues :: !vs
     } deriving (Eq, Ord, Show, Generic)
 
 data EncodedBlock =

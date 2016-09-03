@@ -8,7 +8,6 @@ import           Control.Monad.IO.Class (MonadIO(..))
 
 import           Data.AffineSpace ((.-.))
 import           Data.ByteString (ByteString)
-import qualified Data.ByteString as B
 import           Data.Conduit ((=$=), ($$+-), runConduit, newResumableSource)
 import           Data.Conduit (Sink)
 import           Data.Conduit.Binary (sourceFile, sinkFile)
@@ -17,7 +16,6 @@ import qualified Data.List as List
 import qualified Data.Text as T
 import qualified Data.Text.IO as T
 import           Data.Thyme.Clock (getCurrentTime, toSeconds)
-import qualified Data.Vector as Boxed
 import qualified Data.Vector.Generic as Generic
 import qualified Data.Vector.Unboxed as Unboxed
 import           Data.Void (Void)
@@ -26,6 +24,7 @@ import           P
 
 import           Snooker.Conduit
 import           Snooker.Data
+import           Snooker.Segmented
 import           Snooker.Writable
 
 import           System.IO (IO, FilePath, IOMode(..))
@@ -39,7 +38,7 @@ import           X.Control.Monad.Trans.Either (EitherT, runEitherT)
 
 
 type BenchBlock =
-  Block Unboxed.Vector Boxed.Vector () ByteString
+  Block (Unboxed.Vector ()) (Segmented ByteString)
 
 data BenchError =
     ReadError !(SnookerError Void WritableError)
@@ -58,21 +57,22 @@ embiggen factor (Block n0 ks0 vs0) = do
       Generic.concat $ List.replicate factor ks0
 
     vs1 =
-      Generic.concat $ List.replicate factor vs0
+      Generic.concat $ List.replicate factor $ bytesOfSegmented vs0
 
   gen <- createSystemRandom
   vs <- uniformShuffle vs1 gen
-  pure $ Block n ks vs
+
+  pure . Block n ks $ segmentedOfBytes vs
 
 blockSize :: BenchBlock -> Int
 blockSize (Block _ _ vs) =
-  sum $ fmap B.length vs
+  Unboxed.sum $ segmentedLengths vs
 
 readSequence :: FilePath -> Sink BenchBlock BenchIO a -> BenchIO a
 readSequence path sink = do
   (_, blocks) <-
     firstT ReadError .
-    decodeBlocks nullWritable bytesWritable .
+    decodeBlocks nullWritable segmentedBytesWritable .
     newResumableSource $
     sourceFile path
   hoist (firstT ReadError) blocks $$+- sink
@@ -81,7 +81,7 @@ writeSequence :: FilePath -> [BenchBlock] -> BenchIO ()
 writeSequence path blocks =
   runConduit $
     Conduit.sourceList blocks =$=
-    encodeBlocks nullWritable bytesWritable (Metadata []) =$=
+    encodeBlocks nullWritable segmentedBytesWritable (Metadata []) =$=
     sinkFile path
 
 bench :: MonadIO m => Text -> [(Text, Text, m Double)] -> m a -> m a
