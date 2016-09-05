@@ -4,22 +4,25 @@
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
 module Test.Snooker.VInt where
 
+import           Disorder.Jack (Property, gamble, sizedBounded)
+import           Disorder.Jack (forAllProperties, quickCheckWithResult, stdArgs, maxSuccess)
+
 import           Snooker.VInt
 
 import           P
 
 import           Test.Snooker.Util
 
-import           Test.QuickCheck (forAllProperties, quickCheckWithResult)
-import           Test.QuickCheck (stdArgs, maxSuccess)
-import           Test.QuickCheck.Instances ()
 
-
+prop_vint :: Property
 prop_vint =
-  binaryTripping bVInt getVInt
+  gamble sizedBounded $
+    binaryTripping bVInt getVInt
 
+prop_vint64 :: Property
 prop_vint64 =
-  binaryTripping bVInt64 getVInt64
+  gamble sizedBounded $
+    binaryTripping bVInt64 getVInt64
 
 return []
 tests =

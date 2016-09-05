@@ -279,6 +279,7 @@ decompressChunksLazy lbs =
         return $ bss <> bsss
   in
     second L.fromChunks $ runGet getChunks lbs
+{-# INLINE decompressChunksLazy #-}
 
 decompressChunks :: Strict.ByteString -> Either BinaryError Strict.ByteString
 decompressChunks =
@@ -304,6 +305,7 @@ compressChunk uncompressed =
           pokeWord32be ptr 0 (fromIntegral uncompressedSize)
           pokeWord32be ptr 4 (fromIntegral compressedSize)
           pokeByteString ptr 8 compressed
+{-# INLINE compressChunk #-}
 
 compressHadoopChunks :: Strict.ByteString -> Strict.ByteString
 compressHadoopChunks =
@@ -328,6 +330,7 @@ splitChunks size bs =
         [hd]
       else
         hd : splitChunks size tl
+{-# INLINE splitChunks #-}
 
 decompressBlock :: CompressedBlock -> Either BinaryError EncodedBlock
 decompressBlock b =
@@ -360,6 +363,7 @@ decodeBlock keyCodec valueCodec b = do
     writableDecode valueCodec (encodedCount b) (encodedValueSizes b) (encodedValues b)
 
   return $ Block (encodedCount b) keys values
+{-# INLINE decodeBlock #-}
 
 encodeBlock ::
   WritableCodec xk ks ->
@@ -375,3 +379,4 @@ encodeBlock keyCodec valueCodec b =
       writableEncode valueCodec $ blockValues b
   in
     EncodedBlock (blockCount b) keySizes keys valueSizes values
+{-# INLINE encodeBlock #-}

@@ -10,3 +10,6 @@
 [submodule "lib/snapper"]
 	path = lib/snapper
 	url = git@github.com:ambiata/snapper
+[submodule "lib/anemone"]
+	path = lib/anemone
+	url = git@github.com:ambiata/anemone
