@@ -3,7 +3,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 module Test.Snooker.Foreign where
 
-import           Anemone.Foreign.VInt (packVInt, unpackVInt)
+import           Anemone.Foreign.VInt (encodeVIntArray, decodeVIntArray)
 
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as Lazy
@@ -28,14 +28,14 @@ prop_roundtrip_vint64_hask_to_c =
   gamble (Storable.fromList <$> listOfN 0 10000 sizedBounded) $ \xs ->
     tripping
       (Lazy.toStrict . Builder.toLazyByteString . mconcat . fmap bVInt64 . Storable.toList)
-      (unpackVInt (Storable.length xs))
+      (fmap fst . decodeVIntArray (Storable.length xs))
       xs
 
 prop_roundtrip_vint64_c_to_hask :: Property
 prop_roundtrip_vint64_c_to_hask =
   gamble (Storable.fromList <$> listOfN 0 10000 sizedBounded) $ \xs ->
     tripping
-      packVInt
+      encodeVIntArray
       (runGet (Storable.replicateM (Storable.length xs) getVInt64) . Lazy.fromStrict)
       xs
 
