@@ -15,7 +15,7 @@ module Snooker.Writable (
   , segmentedBytesWritable
   ) where
 
-import           Anemone.Foreign.VInt (packVInt, unpackVInt)
+import           Anemone.Foreign.VInt (encodeVIntArray, decodeVIntArray)
 
 import qualified Data.ByteString as B
 import           Data.ByteString.Internal (ByteString(..))
@@ -45,6 +45,7 @@ import qualified X.Data.ByteString.Unsafe as B
 data WritableError =
     WritableBinaryError !BinaryError
   | WritableVIntError
+  | WritableVIntBytesLeftover !Int
   | WritableSizesMismatch !Int !Int
     deriving (Eq, Ord, Show)
 
@@ -108,7 +109,7 @@ encodeBoxedSizes bss =
     mkSize bs =
       fromIntegral $! B.length bs + 4
   in
-    packVInt .
+    encodeVIntArray .
     Storable.convert $
     Boxed.map mkSize bss
 {-# INLINE encodeBoxedSizes #-}
@@ -121,27 +122,30 @@ encodeBoxedBytes xs =
 decodeBoxedBytes :: Int -> ByteString -> ByteString -> Either WritableError (Boxed.Vector ByteString)
 decodeBoxedBytes n sizes values =
   {-# SCC decodeBoxedBytes #-}
-  case unpackVInt n sizes of
+  case decodeVIntArray n sizes of
     Nothing ->
       Left WritableVIntError
-    Just lengths0 ->
-      let
-        !actual =
-          fromIntegral $
-          Storable.sum lengths0
+    Just (lengths0, leftover) ->
+      if not $ B.null leftover then
+        Left . WritableVIntBytesLeftover $ B.length leftover
+      else
+        let
+          !actual =
+            fromIntegral $
+            Storable.sum lengths0
 
-        !expected =
-          B.length values
+          !expected =
+            B.length values
 
-        !lengths =
-          Unboxed.map fromIntegral $
-          Unboxed.convert lengths0
-      in
-        if actual /= expected then do
-          Left $! WritableSizesMismatch expected actual
-        else
-          {-# SCC decodeGenericBytes_unsafeSplits #-}
-          Right $! B.unsafeSplits (B.drop 4) values lengths
+          !lengths =
+            Unboxed.map fromIntegral $
+            Unboxed.convert lengths0
+        in
+          if actual /= expected then do
+            Left $! WritableSizesMismatch expected actual
+          else
+            {-# SCC decodeGenericBytes_unsafeSplits #-}
+            Right $! B.unsafeSplits (B.drop 4) values lengths
 {-# INLINE decodeBoxedBytes #-}
 
 boxedBytesWritable :: WritableCodec WritableError (Boxed.Vector ByteString)
@@ -217,7 +221,7 @@ encodeSegmentedSizes (Segmented _ lengths _) =
     mkSize !n =
       fromIntegral $! n + 4
   in
-    packVInt $
+    encodeVIntArray $
     Storable.map mkSize lengths
 {-# INLINE encodeSegmentedSizes #-}
 
@@ -229,28 +233,31 @@ encodeSegmentedBytes xs =
 decodeSegmentedBytes :: Int -> ByteString -> ByteString -> Either WritableError (Segmented ByteString)
 decodeSegmentedBytes n sizes values =
   {-# SCC decodeSegmentedBytes #-}
-  case unpackVInt n sizes of
+  case decodeVIntArray n sizes of
     Nothing ->
       Left WritableVIntError
-    Just lengths0 ->
-      let
-        !actual =
-          fromIntegral $
-          Storable.sum lengths0
+    Just (lengths0, leftover) ->
+      if not $ B.null leftover then
+        Left . WritableVIntBytesLeftover $ B.length leftover
+      else
+        let
+          !actual =
+            fromIntegral $
+            Storable.sum lengths0
 
-        !expected =
-          B.length values
+          !expected =
+            B.length values
 
-        !offsets =
-          Storable.prescanl' (\acc len -> acc + len) 4 lengths0
+          !offsets =
+            Storable.prescanl' (\acc len -> acc + len) 4 lengths0
 
-        !lengths =
-          Storable.map (fromIntegral . subtract 4) lengths0
-      in
-        if actual /= expected then do
-          Left $! WritableSizesMismatch expected actual
-        else
-          Right $! Segmented offsets lengths values
+          !lengths =
+            Storable.map (fromIntegral . subtract 4) lengths0
+        in
+          if actual /= expected then do
+            Left $! WritableSizesMismatch expected actual
+          else
+            Right $! Segmented offsets lengths values
 {-# INLINE decodeSegmentedBytes #-}
 
 segmentedBytesWritable :: WritableCodec WritableError (Segmented ByteString)
