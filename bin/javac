@@ -1,0 +1,6 @@
+#!/bin/sh -eux
+
+DIR=$(dirname $0)/..
+
+HADOOP_CLASSPATH=/Library/Java/JavaVirtualMachines/jdk1.7.0_79.jdk/Contents/Home/lib/tools.jar \
+  exec $DIR/bin/hadoop com.sun.tools.javac.Main $@

@@ -24,16 +24,19 @@ library
                      , bytestring                      == 0.10.*
                      , conduit                         == 1.2.*
                      , conduit-extra                   == 1.1.*
+                     , containers                      == 0.5.*
                      , cryptonite                      == 0.15.*
                      , memory                          >= 0.11       && < 0.13
                      , mmorph                          == 1.0.*
                      , primitive                       == 0.6.*
                      , resourcet                       == 1.1.*
+                     , streaming-commons               == 0.1.*
                      , text                            == 1.2.*
                      , transformers                    >= 0.4        && < 0.6
                      , transformers-base               == 0.4.*
                      , vector                          >= 0.10       && < 0.12
                      , void                            == 0.7.*
+                     , zlib-bindings                   == 0.1.*
 
   ghc-options:
                        -Wall -O2
@@ -143,8 +146,10 @@ test-suite test-io
                      , conduit-combinators             == 1.0.*
                      , conduit-extra                   == 1.1.*
                      , cryptonite                      == 0.15.*
+                     , process                         == 1.4.*
                      , QuickCheck                      >= 2.8.2      && < 2.9
                      , quickcheck-instances            == 0.3.*
                      , resourcet                       == 1.1.*
+                     , temporary                       == 1.2.*
                      , text                            == 1.2.*
                      , vector                          >= 0.10       && < 0.12

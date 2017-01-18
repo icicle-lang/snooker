@@ -40,9 +40,8 @@ import           Data.Word (Word8)
 
 import           P
 
-import qualified Snapper
-
 import           Snooker.Binary
+import           Snooker.Compression
 import           Snooker.Data
 import           Snooker.Storable
 import           Snooker.VInt
@@ -123,7 +122,7 @@ bMD5 =
 
 getMetadata :: Get Metadata
 getMetadata = do
-  n <- fromIntegral <$> Binary.getWord32le
+  n <- fromIntegral <$> Binary.getWord32be
   fmap Metadata . replicateM n $
     (,) <$> getTextWritable <*> getTextWritable
 
@@ -134,16 +133,12 @@ bMetadata (Metadata xs) =
       bTextWritable k <>
       bTextWritable v
   in
-    Builder.word32LE (fromIntegral $ length xs) <>
+    Builder.word32BE (fromIntegral $ length xs) <>
     mconcat (fmap kv xs)
 
 headerVersion :: Word8
 headerVersion =
   6
-
-snappyCodec :: ClassName
-snappyCodec =
-  ClassName "org.apache.hadoop.io.compress.SnappyCodec"
 
 getHeader :: Get Header
 getHeader = do
@@ -168,13 +163,10 @@ getHeader = do
 
   compressionType <- getClassName
 
-  unless (compressionType == snappyCodec) $
-    fail "only snappy compressed files supported"
-
   metadata <- getMetadata
   sync <- getMD5
 
-  return $ Header keyType valueType metadata sync
+  return $ Header keyType valueType compressionType metadata sync
 
 bHeader :: Header -> Builder
 bHeader h =
@@ -188,7 +180,7 @@ bHeader h =
     bClassName (headerValueType h) <>
     bBool compression <>
     bBool blockCompression <>
-    bClassName snappyCodec <>
+    bClassName (headerCompressionType h) <>
     bMetadata (headerMetadata h) <>
     bMD5 (headerSync h)
 
@@ -213,13 +205,16 @@ getCompressedBlock expectedMarker = do
 
 bCompressedBlock :: Digest MD5 -> CompressedBlock -> Builder
 bCompressedBlock marker b =
-  Builder.word32LE 0xffffffff <>
-  bMD5 marker <>
-  bVInt (compressedCount b) <>
-  bVIntPrefixedBytes (compressedKeySizes b) <>
-  bVIntPrefixedBytes (compressedKeys b) <>
-  bVIntPrefixedBytes (compressedValueSizes b) <>
-  bVIntPrefixedBytes (compressedValues b)
+  if compressedCount b == 0 then
+    mempty
+  else
+    Builder.word32LE 0xffffffff <>
+    bMD5 marker <>
+    bVInt (compressedCount b) <>
+    bVIntPrefixedBytes (compressedKeySizes b) <>
+    bVIntPrefixedBytes (compressedKeys b) <>
+    bVIntPrefixedBytes (compressedValueSizes b) <>
+    bVIntPrefixedBytes (compressedValues b)
 
 --
 -- Reads the following block structure:
@@ -242,8 +237,8 @@ bCompressedBlock marker b =
 -- using ByteString.createN byteSwap32 and peekByteOff, but perhaps it's a bit
 -- complicated and not worth it.
 --
-decompressChunksLazy :: Lazy.ByteString -> Either BinaryError Lazy.ByteString
-decompressChunksLazy lbs =
+decompressChunksLazy :: CompressionCodec -> Lazy.ByteString -> Either BinaryError Lazy.ByteString
+decompressChunksLazy codec lbs =
   let
     getPart = do
       compressedSize <- Binary.getWord32be
@@ -251,7 +246,7 @@ decompressChunksLazy lbs =
         pure B.empty
       else do
         compressedBytes <- Binary.getByteString $ fromIntegral compressedSize
-        case Snapper.decompress compressedBytes of
+        case compressionDecompress codec compressedBytes of
           Nothing ->
             fail "could not decompress chunk"
           Just bs ->
@@ -281,15 +276,15 @@ decompressChunksLazy lbs =
     second L.fromChunks $ runGet getChunks lbs
 {-# INLINE decompressChunksLazy #-}
 
-decompressChunks :: Strict.ByteString -> Either BinaryError Strict.ByteString
-decompressChunks =
-  fmap L.toStrict . decompressChunksLazy . L.fromStrict
+decompressChunks :: CompressionCodec -> Strict.ByteString -> Either BinaryError Strict.ByteString
+decompressChunks codec =
+  fmap L.toStrict . decompressChunksLazy codec . L.fromStrict
 
-compressChunk :: Strict.ByteString -> Strict.ByteString
-compressChunk uncompressed =
+compressChunk :: CompressionCodec -> Strict.ByteString -> Strict.ByteString
+compressChunk codec uncompressed =
   let
     compressed =
-      Snapper.compress uncompressed
+      compressionCompress codec uncompressed
 
     uncompressedSize =
       B.length uncompressed
@@ -307,9 +302,9 @@ compressChunk uncompressed =
           pokeByteString ptr 8 compressed
 {-# INLINE compressChunk #-}
 
-compressHadoopChunks :: Strict.ByteString -> Strict.ByteString
-compressHadoopChunks =
-  B.concat . fmap compressChunk . splitChunks hadoopMaximumChunkSize
+compressHadoopChunks :: CompressionCodec -> Strict.ByteString -> Strict.ByteString
+compressHadoopChunks codec =
+  B.concat . fmap (compressChunk codec) . splitChunks hadoopMaximumChunkSize
 
 -- | When Hadoop is decoding snappy compressed chunks, it will accept any size
 --   of compressed data, then it will split the **compressed** data in to 64KiB
@@ -332,23 +327,23 @@ splitChunks size bs =
         hd : splitChunks size tl
 {-# INLINE splitChunks #-}
 
-decompressBlock :: CompressedBlock -> Either BinaryError EncodedBlock
-decompressBlock b =
+decompressBlock :: CompressionCodec -> CompressedBlock -> Either BinaryError EncodedBlock
+decompressBlock codec b =
   EncodedBlock
     <$> pure (compressedCount b)
-    <*> (decompressChunks $ compressedKeySizes b)
-    <*> (decompressChunks $ compressedKeys b)
-    <*> (decompressChunks $ compressedValueSizes b)
-    <*> (decompressChunks $ compressedValues b)
+    <*> (decompressChunks codec $ compressedKeySizes b)
+    <*> (decompressChunks codec $ compressedKeys b)
+    <*> (decompressChunks codec $ compressedValueSizes b)
+    <*> (decompressChunks codec $ compressedValues b)
 
-compressBlock :: EncodedBlock -> CompressedBlock
-compressBlock b =
+compressBlock :: CompressionCodec -> EncodedBlock -> CompressedBlock
+compressBlock codec b =
   CompressedBlock
     (encodedCount b)
-    (compressHadoopChunks $ encodedKeySizes b)
-    (compressHadoopChunks $ encodedKeys b)
-    (compressHadoopChunks $ encodedValueSizes b)
-    (compressHadoopChunks $ encodedValues b)
+    (compressHadoopChunks codec $ encodedKeySizes b)
+    (compressHadoopChunks codec $ encodedKeys b)
+    (compressHadoopChunks codec $ encodedValueSizes b)
+    (compressHadoopChunks codec $ encodedValues b)
 
 decodeBlock ::
   WritableCodec xk ks ->

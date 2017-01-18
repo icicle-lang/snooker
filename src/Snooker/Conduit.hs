@@ -39,6 +39,7 @@ import           P
 
 import           Snooker.Binary
 import           Snooker.Codec
+import           Snooker.Compression
 import           Snooker.Data
 import           Snooker.MD5
 import           Snooker.Writable
@@ -138,9 +139,10 @@ conduitDecodeCompressedBlock marker =
 
 conduitDecompressBlock ::
   Monad m =>
+  CompressionCodec ->
   Conduit CompressedBlock (EitherT (SnookerError xk xv) m) EncodedBlock
-conduitDecompressBlock =
-  Conduit.mapM (hoistEither . first CorruptCompression . decompressBlock)
+conduitDecompressBlock codec =
+  Conduit.mapM (hoistEither . first CorruptCompression . decompressBlock codec)
 {-# INLINE conduitDecompressBlock #-}
 
 conduitDecodeBlock ::
@@ -182,31 +184,34 @@ encodeCompressedBlocks header =
 
 decodeEncodedBlocks ::
   Monad m =>
+  CompressionCodec ->
   ResumableSource m ByteString ->
   EitherT (SnookerError xk xv) m
     (Header, ResumableSource (EitherT (SnookerError xk xv) m) EncodedBlock)
-decodeEncodedBlocks =
-  secondT (second ($=+ conduitDecompressBlock)) . decodeCompressedBlocks
+decodeEncodedBlocks codec =
+  secondT (second ($=+ conduitDecompressBlock codec)) . decodeCompressedBlocks
 {-# INLINE decodeEncodedBlocks #-}
 
 encodeEncodedBlocks ::
   MonadBase base m =>
   PrimMonad base =>
+  CompressionCodec ->
   Header ->
   Conduit EncodedBlock m ByteString
-encodeEncodedBlocks header =
-  Conduit.map compressBlock =$= encodeCompressedBlocks header
+encodeEncodedBlocks codec header =
+  Conduit.map (compressBlock codec) =$= encodeCompressedBlocks header
 {-# INLINE encodeEncodedBlocks #-}
 
 decodeBlocks ::
   Monad m =>
   WritableCodec xk ks ->
   WritableCodec xv vs ->
+  CompressionCodec ->
   ResumableSource m ByteString ->
   EitherT (SnookerError xk xv) m
     (Metadata, ResumableSource (EitherT (SnookerError xk xv) m) (Block ks vs))
-decodeBlocks keyCodec valueCodec file = do
-  (header, encoded) <- decodeEncodedBlocks file
+decodeBlocks keyCodec valueCodec compressionCodec file = do
+  (header, encoded) <- decodeEncodedBlocks compressionCodec file
 
   unless (headerKeyType header == writableClass keyCodec) . left $
     UnexpectedKeyType (headerKeyType header) (writableClass keyCodec)
@@ -229,6 +234,7 @@ encodeBlocks ::
   PrimMonad base =>
   WritableCodec xk ks ->
   WritableCodec xv vs ->
+  CompressionCodec ->
   Metadata ->
   Conduit (Block ks vs) m ByteString
 encodeBlocks =
@@ -241,16 +247,18 @@ encodeBlocks' ::
   Digest MD5 ->
   WritableCodec xk ks ->
   WritableCodec xv vs ->
+  CompressionCodec ->
   Metadata ->
   Conduit (Block ks vs) m ByteString
-encodeBlocks' sync keyCodec valueCodec metadata =
+encodeBlocks' sync keyCodec valueCodec compressionCodec metadata =
   let
     header =
       Header
         (writableClass keyCodec)
         (writableClass valueCodec)
+        (compressionClass compressionCodec)
         metadata
         sync
   in
-    Conduit.map (encodeBlock keyCodec valueCodec) =$= encodeEncodedBlocks header
+    Conduit.map (encodeBlock keyCodec valueCodec) =$= encodeEncodedBlocks compressionCodec header
 {-# INLINE encodeBlocks' #-}

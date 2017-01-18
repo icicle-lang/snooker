@@ -74,15 +74,17 @@ genHeader =
   Header
     <$> genClassName
     <*> genClassName
+    <*> genClassName
     <*> genMetadata
     <*> genMD5
 
 shrinkHeader :: Header -> [Header]
-shrinkHeader (Header k0 v0 m0 s0) =
-  [ Header k v0 m0 s0 | k <- shrinkClassName k0 ] <>
-  [ Header k0 v m0 s0 | v <- shrinkClassName v0 ] <>
-  [ Header k0 v0 m s0 | m <- shrinkMetadata m0 ] <>
-  [ Header k0 v0 m0 s | s <- shrinkMD5 s0 ]
+shrinkHeader (Header k0 v0 c0 m0 s0) =
+  [ Header k v0 c0 m0 s0 | k <- shrinkClassName k0 ] <>
+  [ Header k0 v c0 m0 s0 | v <- shrinkClassName v0 ] <>
+  [ Header k0 v0 c m0 s0 | c <- shrinkClassName c0 ] <>
+  [ Header k0 v0 c0 m s0 | m <- shrinkMetadata m0 ] <>
+  [ Header k0 v0 c0 m0 s | s <- shrinkMD5 s0 ]
 
 genCompressedBlock :: Gen CompressedBlock
 genCompressedBlock =
