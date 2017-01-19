@@ -30,13 +30,14 @@ import qualified Data.ByteString as Strict
 import qualified Data.ByteString.Base16 as Base16
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString.Builder.Prim as Prim
 import qualified Data.ByteString.Char8 as Char8
 import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString.Internal as B
 import qualified Data.ByteString.Lazy as L
 import qualified Data.ByteString.Lazy as Lazy
 import qualified Data.Text.Encoding as T
-import           Data.Word (Word8)
+import           Data.Word (Word8, Word32)
 
 import           P
 
@@ -123,7 +124,7 @@ bMD5 =
 
 getMetadata :: Get Metadata
 getMetadata = do
-  n <- fromIntegral <$> Binary.getWord32le
+  n <- fromIntegral <$> Binary.getWord32be
   fmap Metadata . replicateM n $
     (,) <$> getTextWritable <*> getTextWritable
 
@@ -134,7 +135,7 @@ bMetadata (Metadata xs) =
       bTextWritable k <>
       bTextWritable v
   in
-    Builder.word32LE (fromIntegral $ length xs) <>
+    Builder.word32BE (fromIntegral $ length xs) <>
     mconcat (fmap kv xs)
 
 headerVersion :: Word8
@@ -194,10 +195,12 @@ bHeader h =
 
 getCompressedBlock :: Digest MD5 -> Get CompressedBlock
 getCompressedBlock expectedMarker = do
-  escape <- Binary.getWord32le
-  when (escape /= 0xffffffff) . fail $
+  -- SYNC_ESCAPE is the same regardless of endianess
+  escape <- Binary.getWord32host
+  when (escape /= syncEscape) . fail $
     "file corrupt, expected to find sync escape " <>
-    "<0xffffffff> but was " <> printf "<0x%08x>" escape
+    printf "<0x%08x>" syncEscape <> " but was " <>
+    printf "<0x%08x>" escape
 
   marker <- getMD5
   when (expectedMarker /= marker) . fail $
@@ -213,13 +216,20 @@ getCompressedBlock expectedMarker = do
 
 bCompressedBlock :: Digest MD5 -> CompressedBlock -> Builder
 bCompressedBlock marker b =
-  Builder.word32LE 0xffffffff <>
+  -- SYNC_ESCAPE is the same regardless of endianess
+  Prim.primFixed Prim.word32Host syncEscape <>
   bMD5 marker <>
   bVInt (compressedCount b) <>
   bVIntPrefixedBytes (compressedKeySizes b) <>
   bVIntPrefixedBytes (compressedKeys b) <>
   bVIntPrefixedBytes (compressedValueSizes b) <>
   bVIntPrefixedBytes (compressedValues b)
+
+-- | The @SYNC_ESCAPE@ constant from @org.apache.hadoop.io.SequenceFile@
+syncEscape :: Word32
+syncEscape =
+  0xffffffff
+{-# INLINE syncEscape #-}
 
 --
 -- Reads the following block structure:
