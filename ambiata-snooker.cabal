@@ -19,6 +19,7 @@ library
                      , ambiata-x-bytestring
                      , ambiata-x-eithert
                      , ambiata-x-show
+                     , ambiata-x-templatehaskell
                      , base16-bytestring               == 0.1.*
                      , binary                          >= 0.7        && < 0.9
                      , bytestring                      == 0.10.*
@@ -29,6 +30,7 @@ library
                      , mmorph                          == 1.0.*
                      , primitive                       == 0.6.*
                      , resourcet                       == 1.1.*
+                     , template-haskell                == 2.*
                      , text                            == 1.2.*
                      , transformers                    >= 0.4        && < 0.6
                      , transformers-base               == 0.4.*

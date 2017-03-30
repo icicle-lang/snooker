@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
@@ -8,11 +9,8 @@ module Test.Snooker.Factset where
 
 import           Control.Monad.Trans.Resource (runResourceT)
 
-import           Crypto.Hash (Digest, MD5, digestFromByteString)
-
 import           Data.Binary.Get (runGetOrFail)
 import qualified Data.ByteString as B
-import qualified Data.ByteString.Base16 as Base16
 import qualified Data.ByteString.Lazy as L
 import           Data.Conduit (($$+-), (=$=), newResumableSource)
 import           Data.Conduit.Binary (sourceFile)
@@ -39,12 +37,6 @@ import           Test.Snooker.Util
 
 import           X.Control.Monad.Trans.Either (runEitherT)
 
-
-fileSync :: Maybe (Digest MD5)
-fileSync =
-  digestFromByteString . fst $
-    Base16.decode "b48b79e329914cd3d0ff793a86801dc7"
-
 prop_read_header =
   once . testIO $ do
     lbs <- L.readFile "data/mackerel-2014-01-01"
@@ -56,7 +48,7 @@ prop_read_header =
             headerKeyType hdr === writableClass nullWritable
           , headerValueType hdr === writableClass bytesWritable
           , headerMetadata hdr === Metadata []
-          , Just (headerSync hdr) === fileSync
+          , headerSync hdr === [md5| b48b79e329914cd3d0ff793a86801dc7 |]
           ]
 
 prop_blocks =

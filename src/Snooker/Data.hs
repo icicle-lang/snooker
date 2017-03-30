@@ -1,5 +1,8 @@
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell #-}
 module Snooker.Data (
     ClassName(..)
   , Metadata(..)
@@ -7,17 +10,31 @@ module Snooker.Data (
   , Block(..)
   , EncodedBlock(..)
   , CompressedBlock(..)
+
+  -- * Quasi-quoter for 'Digest MD5'
+  , md5
   ) where
 
-import           Crypto.Hash (Digest, MD5)
+import           Crypto.Hash (Digest, MD5, digestFromByteString)
 
 import           Data.ByteString (ByteString)
+import qualified Data.ByteString.Base16 as Base16
+import qualified Data.ByteString.Char8 as Char8
+import           Data.String (String)
+import qualified Data.Text as T
+import qualified Data.Text.Encoding as T
 
 import           GHC.Generics (Generic)
 
+import           Language.Haskell.TH (Lit(..), litE, varE, appE)
+import           Language.Haskell.TH.Quote (QuasiQuoter)
+
 import           P
+import qualified Prelude
 
 import           X.Text.Show (gshowsPrec)
+
+import           X.Language.Haskell.TH (qparse)
 
 
 newtype ClassName =
@@ -70,3 +87,27 @@ data CompressedBlock =
     , compressedValueSizes :: !ByteString
     , compressedValues :: !ByteString
     } deriving (Eq, Ord, Show, Generic)
+
+unsafeMD5 :: String -> Digest MD5
+unsafeMD5 s =
+  case digestFromByteString (Char8.pack s) of
+    Nothing ->
+      Prelude.error "Snooker.Data.md5: the impossible happened, received invalid MD5 hash at runtime"
+    Just x ->
+      x
+
+md5 :: QuasiQuoter
+md5 =
+  qparse $ \s ->
+    let
+      bs16 =
+        fst . Base16.decode . T.encodeUtf8 . T.strip $ T.pack s
+
+      s16 =
+        litE . StringL $ Char8.unpack bs16
+    in
+      case digestFromByteString bs16 of
+        Nothing ->
+          fail $ "Not an MD5 hash: " <> s
+        Just (_ :: Digest MD5) ->
+          varE 'unsafeMD5 `appE` s16
