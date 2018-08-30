@@ -13,6 +13,8 @@ module Snooker.Writable (
   , bytesWritable
   , boxedBytesWritable
   , segmentedBytesWritable
+
+  , vLongWritable
   ) where
 
 import           Anemone.Foreign.VInt (encodeVIntArray, decodeVIntArray)
@@ -36,6 +38,7 @@ import           Snooker.Binary
 import           Snooker.Data
 import           Snooker.Segmented
 import           Snooker.Storable
+import           Snooker.VInt
 
 import           System.IO.Unsafe (unsafePerformIO)
 
@@ -267,3 +270,33 @@ segmentedBytesWritable =
     encodeSegmentedBytes
     decodeSegmentedBytes
 {-# INLINE segmentedBytesWritable #-}
+
+------------------------------------------------------------------------
+
+vLongWritable :: WritableCodec WritableError (Storable.Vector Int64)
+vLongWritable =
+  let
+    encodeSizes iss =
+      encodeVIntArray $
+        Storable.map vInt64Size iss
+    {-# INLINE encodeSizes #-}
+
+    encode xs =
+      (encodeSizes xs, encodeVIntArray xs)
+    {-# INLINE encode #-}
+
+    decode n _sizes is =
+      case decodeVIntArray n is of
+        Nothing ->
+          Left WritableVIntError
+        Just (iss, leftover) ->
+          if not $ B.null leftover then
+            Left . WritableVIntBytesLeftover $ B.length leftover
+          else
+            pure iss
+    {-# INLINE decode #-}
+  in
+    WritableCodec (ClassName "org.apache.hadoop.io.VLongWritable") encode decode
+{-# INLINE vLongWritable #-}
+
+-----------------------------------------------------------------------

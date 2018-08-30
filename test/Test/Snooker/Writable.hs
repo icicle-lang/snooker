@@ -53,6 +53,11 @@ prop_segmented_bytes_tripping =
   gamble (segmentedOfBytes <$> arbitrary) $
     writableVectorTripping segmentedLength segmentedBytesWritable
 
+prop_vint_tripping :: Property
+prop_vint_tripping =
+  gamble arbitrary $
+    writableVectorTripping Generic.length vLongWritable
+
 return []
 tests =
   $forAllProperties $ quickCheckWithResult (stdArgs {maxSuccess = 1000})

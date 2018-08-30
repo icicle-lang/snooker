@@ -8,11 +8,12 @@ module Snooker.VInt (
   , getVInt64
   , bVInt
   , bVInt64
+  , vInt64Size
   ) where
 
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Binary
-import           Data.Bits ((.&.), (.|.), complement, shiftL, shiftR, bit)
+import           Data.Bits ((.&.), (.|.), complement, shiftL, shiftR, bit, countLeadingZeros)
 import qualified Data.ByteString as B
 import           Data.ByteString.Builder (Builder)
 import qualified Data.ByteString.Builder as Builder
@@ -137,3 +138,19 @@ bVInt :: Int -> Builder
 bVInt =
   bVInt64 . fromIntegral
 {-# INLINE bVInt #-}
+
+vInt64Size :: Int64 -> Int64
+vInt64Size v =
+  if v >= -112 && v <= 127 then
+    1
+  else
+    let
+      v' =
+        if v >= 0 then
+          v
+        else
+          complement v
+      dataBits =
+        64 - countLeadingZeros v'
+    in
+      (fromIntegral dataBits + 7) `div` 8 + 1;
