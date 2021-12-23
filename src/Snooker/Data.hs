@@ -42,6 +42,7 @@ data Header =
   Header {
       headerKeyType :: !ClassName
     , headerValueType :: !ClassName
+    , headerCompressionType :: !ClassName
     , headerMetadata :: !Metadata
     , headerSync :: !(Digest MD5)
     } deriving (Eq, Ord, Show, Generic)

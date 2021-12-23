@@ -9,6 +9,7 @@ module Test.Snooker.Util (
   ) where
 
 import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
+import           Control.Monad.Trans.Either (EitherT, runEitherT)
 
 import           Data.Binary.Get (Get)
 import qualified Data.Binary.Get as Binary
@@ -28,7 +29,6 @@ import           System.IO (IO)
 import           Test.QuickCheck (Property)
 import           Test.QuickCheck.Property (counterexample, failed)
 
-import           X.Control.Monad.Trans.Either (EitherT, runEitherT)
 
 
 binaryTripping :: (Show a, Eq a) => (a -> Builder) -> Get a -> a -> Property

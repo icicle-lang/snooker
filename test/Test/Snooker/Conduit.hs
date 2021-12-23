@@ -8,6 +8,7 @@ module Test.Snooker.Conduit where
 
 import           Control.Monad.Morph (MFunctor(..))
 import           Control.Monad.Trans.Class (lift)
+import           Control.Monad.Trans.Either (EitherT)
 
 import           Data.ByteString (ByteString)
 import           Data.Conduit ((=$=), ($$+-), runConduit, newResumableSource)
@@ -31,7 +32,6 @@ import           Test.QuickCheck.Instances ()
 import           Test.Snooker.Arbitrary ()
 import           Test.Snooker.Util
 
-import           X.Control.Monad.Trans.Either (EitherT)
 
 
 prop_null_bytes_tripping metadata0 blocks0 =

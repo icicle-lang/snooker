@@ -53,10 +53,21 @@ prop_segmented_bytes_tripping =
   gamble (segmentedOfBytes <$> arbitrary) $
     writableVectorTripping segmentedLength segmentedBytesWritable
 
-prop_vint_tripping :: Property
-prop_vint_tripping =
+prop_vlong_tripping :: Property
+prop_vlong_tripping =
   gamble arbitrary $
     writableVectorTripping Generic.length vLongWritable
+
+prop_long_tripping :: Property
+prop_long_tripping =
+  gamble arbitrary $
+    writableVectorTripping Generic.length longWritable
+
+prop_double_tripping :: Property
+prop_double_tripping =
+  gamble arbitrary $
+    writableVectorTripping Generic.length doubleWritable
+
 
 return []
 tests =

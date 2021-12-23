@@ -4,6 +4,10 @@ module Snooker.Storable (
   , pokeWord32be
   , pokeWord64be
   , pokeByteString
+
+  , peekWord8be
+  , peekWord32be
+  , peekWord64be
   ) where
 
 import           Data.ByteString.Internal (ByteString(..))
@@ -12,7 +16,7 @@ import           Data.Word
 
 import           Foreign.Ptr (Ptr, castPtr, plusPtr)
 import           Foreign.ForeignPtr (withForeignPtr)
-import           Foreign.Storable (pokeByteOff)
+import           Foreign.Storable (pokeByteOff, peekByteOff)
 
 import           P
 
@@ -33,6 +37,21 @@ pokeWord64be :: Ptr x -> Int -> Word64 -> IO ()
 pokeWord64be p off x =
   pokeByteOff p off (byteSwap64 x)
 {-# INLINE pokeWord64be #-}
+
+peekWord8be :: Ptr x -> Int -> IO Word8
+peekWord8be p off =
+  peekByteOff p off
+{-# INLINE peekWord8be #-}
+
+peekWord32be :: Ptr x -> Int -> IO Word32
+peekWord32be p off =
+  byteSwap32 <$> peekByteOff p off
+{-# INLINE peekWord32be #-}
+
+peekWord64be :: Ptr x -> Int -> IO Word64
+peekWord64be p off =
+  byteSwap64 <$> peekByteOff p off
+{-# INLINE peekWord64be #-}
 
 pokeByteString :: Ptr x -> Int -> ByteString -> IO ()
 pokeByteString p off (PS xfp xoff xlen) =

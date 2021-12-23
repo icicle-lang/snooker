@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NoImplicitPrelude #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 module Snooker.Writable (
     WritableCodec(..)
   , WritableError(..)
@@ -15,6 +16,9 @@ module Snooker.Writable (
   , segmentedBytesWritable
 
   , vLongWritable
+
+  , longWritable
+  , doubleWritable
   ) where
 
 import           Anemone.Foreign.VInt (encodeVIntArray, decodeVIntArray)
@@ -22,11 +26,13 @@ import           Anemone.Foreign.VInt (encodeVIntArray, decodeVIntArray)
 import qualified Data.ByteString as B
 import           Data.ByteString.Internal (ByteString(..))
 import qualified Data.ByteString.Internal as B
+import           Data.Coerce (coerce)
 import qualified Data.Vector as Boxed
 import qualified Data.Vector.Generic as Generic
 import qualified Data.Vector.Storable as Storable
 import qualified Data.Vector.Unboxed as Unboxed
 import           Data.Void (Void)
+import           Data.Word (Word64)
 
 import           Foreign.ForeignPtr (withForeignPtr)
 import           Foreign.Ptr (plusPtr)
@@ -298,5 +304,70 @@ vLongWritable =
   in
     WritableCodec (ClassName "org.apache.hadoop.io.VLongWritable") encode decode
 {-# INLINE vLongWritable #-}
+
+-----------------------------------------------------------------------
+
+encodeWord64 :: Storable.Vector Word64 -> (ByteString, ByteString)
+encodeWord64 xxs =
+  let
+    encodeSizes xs =
+      encodeVIntArray $
+        Storable.replicate (Storable.length xs) 8
+    {-# INLINE encodeSizes #-}
+
+    -- We need to flip to big-endian.
+    -- Intel (which is all we're using)
+    -- is little endian. On a big endian
+    -- architecture we could just point
+    -- to the foreign pointer.
+    encodeValues xs =
+      let
+        !n_total =
+          8 * Storable.length xs
+      in
+        B.unsafeCreate n_total $ \ptr ->
+          let
+            go !n x = do
+              pokeWord64be ptr n x
+              pure $! n + 8
+          in
+            Storable.foldM_ go 0 xs
+    {-# INLINE encodeValues #-}
+
+  in
+    (encodeSizes xxs, encodeValues xxs)
+
+decodeWord64 :: Int -> ByteString -> ByteString -> Either WritableError (Storable.Vector Word64)
+decodeWord64 n _sizes (PS fp off len) =
+  let
+    expected = n * 8
+  in
+    if len /= expected then do
+      Left $! WritableSizesMismatch expected len
+    else
+      Right $!
+        B.accursedUnutterablePerformIO $
+          withForeignPtr fp $ \ptr ->
+            Storable.generateM n $ \ix ->
+              peekWord64be ptr (off + ix * 8)
+{-# INLINE decodeWord64 #-}
+
+-----------------------------------------------------------------------
+
+longWritable :: WritableCodec WritableError (Storable.Vector Int64)
+longWritable =
+  WritableCodec
+    (ClassName "org.apache.hadoop.io.LongWritable")
+    (encodeWord64 . coerce)
+    (fmap coerce . decodeWord64)
+{-# INLINE longWritable #-}
+
+doubleWritable :: WritableCodec WritableError (Storable.Vector Double)
+doubleWritable =
+  WritableCodec
+    (ClassName "org.apache.hadoop.io.DoubleWritable")
+    (encodeWord64 . coerce)
+    (fmap coerce . decodeWord64)
+{-# INLINE doubleWritable #-}
 
 -----------------------------------------------------------------------

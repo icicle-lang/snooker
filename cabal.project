@@ -1,0 +1,25 @@
+packages: .
+          lib/disorder/disorder-core
+          lib/disorder/disorder-corpus
+          lib/disorder/disorder-jack
+          lib/anemone/
+          lib/snapper/
+          lib/x/x-optparse/
+          lib/x/x-bytestring/
+          lib/x/x-attoparsec/
+          lib/x/x-exception/
+          lib/x/x-vector/
+          lib/x/x-templatehaskell/
+          lib/x/x-show/
+          lib/p/
+
+constraints:
+  cabal > 2
+
+package icicle
+  tests: True
+
+-- source-repository-package
+--    type: git
+--    location: https://github.com/HuwCampbell/orc-haskell.git
+--    tag: 9fdefc373e7f216f0da1d6d053712947ea30dbf2

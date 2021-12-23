@@ -9,6 +9,7 @@ import qualified Data.ByteString as B
 import           Disorder.Core.Tripping (tripping)
 
 import           Snooker.Codec
+import qualified Snooker.Codec.Snappy as Snappy
 import           Snooker.Writable
 
 import           P
@@ -31,11 +32,11 @@ prop_compressed_block_tripping (ArbitraryMD5 md5) =
   binaryTripping (bCompressedBlock md5) (getCompressedBlock md5)
 
 prop_compress_bytes_tripping =
-  tripping compressHadoopChunks decompressChunks
+  tripping Snappy.compress Snappy.decompress
 
 prop_compress_many_bytes_tripping =
   forAllShrink (scale (* 10000) (getNonNegative <$> arbitrary)) shrink $ \n ->
-    case decompressChunks . compressHadoopChunks $ B.replicate n 0 of
+    case Snappy.decompress . Snappy.compress $ B.replicate n 0 of
       Left err ->
         counterexample ("Failed to roundtrip " <> show n <> " bytes") .
         counterexample (show err) $
@@ -59,12 +60,12 @@ prop_compress_bytes_tripping0 n =
       B.replicate (n * word32) 0
 
     compress0 =
-      (<> emptyBlocks) . compressChunk
+      (<> emptyBlocks) . Snappy.compress
   in
-    tripping compress0 decompressChunks
+    tripping compress0 Snappy.decompress
 
 prop_compress_block_tripping =
-  tripping compressBlock decompressBlock
+  tripping compressBlock (decompressBlock Snappy.decompress)
 
 prop_null_bytes_block =
   let

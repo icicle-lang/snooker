@@ -21,6 +21,7 @@ import           Control.Monad.Base (MonadBase)
 import           Control.Monad.Morph (MFunctor(..))
 import           Control.Monad.Primitive (PrimMonad)
 import           Control.Monad.Trans.Class (lift)
+import           Control.Monad.Trans.Either (EitherT, hoistEither, left, hoistMaybe)
 
 import           Crypto.Hash (Digest, MD5)
 
@@ -42,8 +43,8 @@ import           Snooker.Codec
 import           Snooker.Data
 import           Snooker.MD5
 import           Snooker.Writable
+import Snooker.Codec.Snappy
 
-import           X.Control.Monad.Trans.Either (EitherT, hoistEither, left)
 
 
 data SnookerError xk xv =
@@ -51,6 +52,7 @@ data SnookerError xk xv =
   | CorruptCompressedBlock !BinaryError
   | CorruptCompression !BinaryError
   | CorruptRecords !(DecodeError xk xv)
+  | UnsupportedDecoder !ClassName
   | UnexpectedKeyType !ClassName !ClassName
   | UnexpectedValueType !ClassName !ClassName
     deriving (Eq, Ord, Show)
@@ -69,6 +71,8 @@ renderSnookerError renderKeyError renderValueError = \case
   CorruptRecords err ->
     "Sequence file records were corrupt: " <>
     renderDecodeError renderKeyError renderValueError err
+  UnsupportedDecoder clazz ->
+    "Unsupported decompression class: " <> unClassName clazz
   UnexpectedKeyType expected actual ->
     "Sequence file had an unexpected key type:" <>
     "\n  expected <" <> unClassName expected <> ">" <>
@@ -138,9 +142,10 @@ conduitDecodeCompressedBlock marker =
 
 conduitDecompressBlock ::
   Monad m =>
+  Decompressor ->
   Conduit CompressedBlock (EitherT (SnookerError xk xv) m) EncodedBlock
-conduitDecompressBlock =
-  Conduit.mapM (hoistEither . first CorruptCompression . decompressBlock)
+conduitDecompressBlock decompressor =
+  Conduit.mapM (hoistEither . first CorruptCompression . decompressBlock decompressor)
 {-# INLINE conduitDecompressBlock #-}
 
 conduitDecodeBlock ::
@@ -185,8 +190,13 @@ decodeEncodedBlocks ::
   ResumableSource m ByteString ->
   EitherT (SnookerError xk xv) m
     (Header, ResumableSource (EitherT (SnookerError xk xv) m) EncodedBlock)
-decodeEncodedBlocks =
-  secondT (second ($=+ conduitDecompressBlock)) . decodeCompressedBlocks
+decodeEncodedBlocks src = do
+  (header, compressed) <- decodeCompressedBlocks src
+  let compressionClass  = headerCompressionType header
+  decompressor         <- hoistMaybe (UnsupportedDecoder compressionClass)
+                        $ selectDecompressor compressionClass
+  let decompressed      = compressed $=+ conduitDecompressBlock decompressor
+  return (header, decompressed)
 {-# INLINE decodeEncodedBlocks #-}
 
 encodeEncodedBlocks ::
@@ -249,6 +259,7 @@ encodeBlocks' sync keyCodec valueCodec metadata =
       Header
         (writableClass keyCodec)
         (writableClass valueCodec)
+        snappyCodec
         metadata
         sync
   in

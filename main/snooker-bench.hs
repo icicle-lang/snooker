@@ -5,6 +5,7 @@
 import           Control.Monad.Morph (MFunctor(..))
 import           Control.Monad.Trans.Resource (ResourceT, runResourceT)
 import           Control.Monad.IO.Class (MonadIO(..))
+import           Control.Monad.Trans.Either (EitherT, runEitherT)
 
 import           Data.AffineSpace ((.-.))
 import           Data.ByteString (ByteString)
@@ -23,6 +24,8 @@ import           Data.Void (Void)
 
 import           P
 
+import qualified Prelude as Savage
+
 import           Snooker.Conduit
 import           Snooker.Data
 import           Snooker.Segmented
@@ -35,7 +38,6 @@ import           System.Random.MWC.Distributions (uniformShuffle)
 
 import           Text.Printf (printf)
 
-import           X.Control.Monad.Trans.Either (EitherT, runEitherT)
 
 
 type BenchBlock =
@@ -128,9 +130,12 @@ getFileSize path =
 mainE :: IO (Either BenchError ())
 mainE =
   runResourceT . runEitherT $ do
-    [original] <- readSequence "data/expression-2014-06-02" Conduit.consume
+    originals <- readSequence "data/expression-2014-06-02" Conduit.consume
 
     let
+      original =
+        Savage.head originals
+
       trials =
         [ (10, 50000)
         , (25, 20000)
